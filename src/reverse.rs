@@ -3,7 +3,10 @@ use std::{
     ops::{Add, Div, Mul, Sub},
 };
 
+use rand::{seq::SliceRandom, Rng};
 use rand_distr::Distribution;
+
+use crate::Sample;
 
 /// A node in the computation graph holding the index of the nodes it depends on and the gradients
 /// of the output with respect to each of the input.
@@ -373,5 +376,78 @@ impl<'a> Mlp<'a> {
                 .fold(layer.call(input), |acc, layer| layer.call(&acc)),
             None => Vec::new(),
         }
+    }
+}
+
+pub fn mse<'a, const M: usize, const N: usize>(
+    tape: &'a Tape,
+    mlp: &Mlp<'a>,
+    dataset: &[Sample<M, N>],
+) -> Variable<'a> {
+    let mut loss = tape.add_variable(0.0);
+    for sample in dataset {
+        let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
+        let pred = mlp.call(&input);
+        let mut loss_sample = tape.add_variable(0.0);
+        for (p, o) in pred.iter().zip(sample.output) {
+            let diff = p - &tape.add_variable(o);
+            loss_sample = loss_sample + diff * diff;
+        }
+        loss_sample = loss_sample / tape.add_variable(sample.output.len() as f64);
+        loss = loss + loss_sample;
+    }
+    loss / tape.add_variable(dataset.len() as f64)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn train_eval<'a, R, const M: usize, const N: usize>(
+    tape: &'a Tape,
+    mlp: &mut Mlp<'a>,
+    rng: &mut R,
+    dataset: &[Sample<M, N>],
+    epochs: usize,
+    batch_size: usize,
+    learning_rate: f64,
+    print_interval: usize,
+) where
+    R: Rng,
+{
+    // Mark the last index of the tape. At this point in time, nodes in the tape
+    // includes the variables in the MLP and in the dataset.
+    tape.mark();
+    println!("{} tape nodes", tape.len());
+
+    for epoch in 0..epochs {
+        let mut dataset = Vec::from(dataset);
+        dataset.shuffle(rng);
+        for batch in dataset.chunks(batch_size) {
+            let loss = mse(tape, mlp, batch);
+            let gradients = loss.gradients();
+            for param in mlp.parameters() {
+                param.learn(&gradients, learning_rate);
+                param.zerograd();
+            }
+            // Clear all intermediate nodes in the tape (nodes whose index is greater
+            // than the marked index).
+            tape.clean();
+        }
+        if print_interval != 0 && (epoch + 1) % print_interval == 0 {
+            // Compute the loss on the entire dataset.
+            let loss = mse(tape, mlp, &dataset);
+            println!("Epoch: {}, Loss: {}", epoch, loss.value);
+            println!("\tTape size: {}", tape.len());
+            tape.clean();
+            println!("\tTape size: {}", tape.len());
+        }
+    }
+
+    for sample in dataset {
+        let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
+        let pred: Vec<_> = mlp.call(&input).iter().map(|x| x.value).collect();
+        tape.clean();
+        println!("Input: {:?}", sample.input);
+        println!("Real: {:?}", sample.output);
+        println!("Pred: {:?}", pred);
+        println!("====================")
     }
 }
