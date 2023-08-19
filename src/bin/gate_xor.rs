@@ -9,9 +9,11 @@ fn main() {
     let distribution = StandardNormal;
     let tape = Tape::default();
     let mut mlp = Mlp::new(vec![
-        Layer::new(2, 2, Variable::sigmoid, &mut rng, distribution),
-        Layer::new(2, 1, Variable::sigmoid, &mut rng, distribution),
+        Layer::new(&tape, 2, 2, Variable::sigmoid, &mut rng, distribution),
+        Layer::new(&tape, 2, 1, Variable::sigmoid, &mut rng, distribution),
     ]);
+    println!("{} parameters", mlp.parameters().len());
+
     let dataset = vec![
         Sample {
             input: [0.0, 0.0],
@@ -30,5 +32,6 @@ fn main() {
             output: [0.0],
         },
     ];
+
     train_eval(&tape, &mut mlp, &mut rng, &dataset, 100000, 4, 0.1, 20000);
 }

@@ -10,12 +10,15 @@ fn main() {
     let distribution = StandardNormal;
     let tape = Tape::default();
     let mut mlp = Mlp::new(vec![Layer::new(
+        &tape,
         2,
         1,
         Variable::identity,
         &mut rng,
         distribution,
     )]);
+    println!("{} parameters", mlp.parameters().len());
+
     let dataset = dataset_add(1000);
     train_eval(&tape, &mut mlp, &mut rng, &dataset, 100, 100, 0.1, 20);
 }
