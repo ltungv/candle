@@ -1,5 +1,5 @@
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     ops::{Add, Div, Mul, Sub},
 };
 
@@ -21,7 +21,6 @@ struct Node {
 #[derive(Debug, Default)]
 pub struct Tape {
     nodes: RefCell<Vec<Node>>,
-    marked_position: Cell<usize>,
 }
 
 impl Tape {
@@ -36,20 +35,9 @@ impl Tape {
         self.len() == 0
     }
 
-    /// Save the current size of the tape.
-    pub fn mark(&self) {
-        self.marked_position.set(self.len());
-    }
-
     /// Remove all nodes with the given range from the tape
-    pub fn clean(&self) {
-        self.nodes.borrow_mut().drain(self.marked_position.get()..);
-    }
-
-    /// Reset the gradients of a variable to zero.
-    fn zerograd(&self, index: usize) {
-        let mut nodes = self.nodes.borrow_mut();
-        nodes[index].grad = [0.0, 0.0];
+    pub fn clear(&self) {
+        self.nodes.borrow_mut().clear();
     }
 
     /// Add a node to the tape and return its index.
@@ -216,10 +204,6 @@ impl<'ctx> Variable<'ctx> {
         gradients
     }
 
-    pub fn zerograd(&self) {
-        self.tape.zerograd(self.index);
-    }
-
     pub fn learn(&mut self, gradients: &[f64], learning_rate: f64) {
         self.value -= learning_rate * gradients[self.index];
     }
@@ -257,17 +241,22 @@ impl<'ctx> Variable<'ctx> {
 /// A unary operation on variable.
 type UnaryOp<T> = fn(&T) -> T;
 
-/// A neuron holding a set of weights and a bias.
-struct Neuron<'a> {
+struct NeuronVariables<'a> {
     bias: Variable<'a>,
     weights: Vec<Variable<'a>>,
+}
+
+/// A neuron holding a set of weights and a bias.
+struct Neuron<'a> {
+    bias: f64,
+    weights: Vec<f64>,
+    variables: Option<NeuronVariables<'a>>,
     nonlinearity: UnaryOp<Variable<'a>>,
 }
 
 impl<'a> Neuron<'a> {
     /// Create a new f32 neuron with randomized weights and bias.
     pub fn new<R, D>(
-        tape: &'a Tape,
         input_size: usize,
         nonlinearity: UnaryOp<Variable<'a>>,
         rng: &mut R,
@@ -278,30 +267,48 @@ impl<'a> Neuron<'a> {
         D: Distribution<f64> + Copy,
     {
         Self {
-            bias: tape.add_variable(rng.sample(distribution)),
-            weights: (0..input_size)
-                .map(|_| tape.add_variable(rng.sample(distribution)))
-                .collect(),
+            bias: rng.sample(distribution),
+            weights: (0..input_size).map(|_| rng.sample(distribution)).collect(),
+            variables: None,
             nonlinearity,
         }
     }
 
     /// Returns a list of all parameters of the neuron.
     pub fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
-        let mut params: Vec<_> = self.weights.iter_mut().collect();
-        params.push(&mut self.bias);
+        let mut params = Vec::new();
+        if let Some(ref mut vs) = self.variables {
+            params.push(&mut vs.bias);
+            vs.weights.iter_mut().for_each(|w| params.push(w));
+        }
         params
     }
 
+    pub fn update_parameters(&mut self) {
+        if let Some(variables) = self.variables.take() {
+            self.bias = variables.bias.value;
+            self.weights = variables.weights.into_iter().map(|w| w.value).collect();
+        }
+    }
+
+    pub fn clear_parameters(&mut self) {
+        self.variables.take();
+    }
+
     /// Applies the neuron to the given input.
-    pub fn call(&self, input: &[Variable<'a>]) -> Variable<'a> {
+    pub fn call(&mut self, tape: &'a Tape, input: &[Variable<'a>]) -> Variable<'a> {
         assert_eq!(input.len(), self.weights.len());
+        let variables = self.variables.get_or_insert_with(|| {
+            let bias = tape.add_variable(self.bias);
+            let weights = self.weights.iter().map(|w| tape.add_variable(*w)).collect();
+            NeuronVariables { bias, weights }
+        });
         (self.nonlinearity)(
-            &self
+            &variables
                 .weights
                 .iter()
                 .zip(input)
-                .fold(self.bias.identity(), |acc, (w, x)| acc + w * x),
+                .fold(variables.bias.identity(), |acc, (w, x)| acc + w * x),
         )
     }
 }
@@ -314,7 +321,6 @@ pub struct Layer<'a> {
 impl<'a> Layer<'a> {
     /// Create a new f32 layer with randomized neurons.
     pub fn new<R, D>(
-        tape: &'a Tape,
         input_size: usize,
         output_size: usize,
         nonlinearity: UnaryOp<Variable<'a>>,
@@ -327,7 +333,7 @@ impl<'a> Layer<'a> {
     {
         Self {
             neurons: (0..output_size)
-                .map(|_| Neuron::new(tape, input_size, nonlinearity, rng, distribution))
+                .map(|_| Neuron::new(input_size, nonlinearity, rng, distribution))
                 .collect(),
         }
     }
@@ -340,11 +346,19 @@ impl<'a> Layer<'a> {
             .collect()
     }
 
+    pub fn update_parameters(&mut self) {
+        self.neurons.iter_mut().for_each(|n| n.update_parameters());
+    }
+
+    pub fn clear_parameters(&mut self) {
+        self.neurons.iter_mut().for_each(|n| n.clear_parameters());
+    }
+
     /// Applies the layer to the given input.
-    pub fn call(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
+    pub fn call(&mut self, tape: &'a Tape, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
         self.neurons
-            .iter()
-            .map(|neuron| neuron.call(input))
+            .iter_mut()
+            .map(|neuron| neuron.call(tape, input))
             .collect()
     }
 }
@@ -368,12 +382,20 @@ impl<'a> Mlp<'a> {
             .collect()
     }
 
+    pub fn update_parameters(&mut self) {
+        self.layers.iter_mut().for_each(|l| l.update_parameters());
+    }
+
+    pub fn clear_parameters(&mut self) {
+        self.layers.iter_mut().for_each(|l| l.clear_parameters());
+    }
+
     /// Applies the MLP to the given input.
-    pub fn call(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
-        match self.layers.split_first() {
+    pub fn call(&mut self, tape: &'a Tape, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
+        match self.layers.split_first_mut() {
             Some((layer, ls)) => ls
-                .iter()
-                .fold(layer.call(input), |acc, layer| layer.call(&acc)),
+                .iter_mut()
+                .fold(layer.call(tape, input), |acc, layer| layer.call(tape, &acc)),
             None => Vec::new(),
         }
     }
@@ -381,13 +403,13 @@ impl<'a> Mlp<'a> {
 
 pub fn mse<'a, const M: usize, const N: usize>(
     tape: &'a Tape,
-    mlp: &Mlp<'a>,
+    mlp: &mut Mlp<'a>,
     dataset: &[Sample<M, N>],
 ) -> Variable<'a> {
     let mut loss = tape.add_variable(0.0);
     for sample in dataset {
         let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
-        let pred = mlp.call(&input);
+        let pred = mlp.call(tape, &input);
         let mut loss_sample = tape.add_variable(0.0);
         for (p, o) in pred.iter().zip(sample.output) {
             let diff = p - &tape.add_variable(o);
@@ -412,11 +434,6 @@ pub fn train_eval<'a, R, const M: usize, const N: usize>(
 ) where
     R: Rng,
 {
-    // Mark the last index of the tape. At this point in time, nodes in the tape
-    // includes the variables in the MLP and in the dataset.
-    tape.mark();
-    println!("{} tape nodes", tape.len());
-
     for epoch in 0..epochs {
         let mut dataset = Vec::from(dataset);
         dataset.shuffle(rng);
@@ -425,29 +442,28 @@ pub fn train_eval<'a, R, const M: usize, const N: usize>(
             let gradients = loss.gradients();
             for param in mlp.parameters() {
                 param.learn(&gradients, learning_rate);
-                param.zerograd();
             }
-            // Clear all intermediate nodes in the tape (nodes whose index is greater
-            // than the marked index).
-            tape.clean();
+            mlp.update_parameters();
+            tape.clear();
         }
         if print_interval != 0 && (epoch + 1) % print_interval == 0 {
             // Compute the loss on the entire dataset.
             let loss = mse(tape, mlp, &dataset);
             println!("Epoch: {}, Loss: {}", epoch, loss.value);
-            println!("\tTape size: {}", tape.len());
-            tape.clean();
-            println!("\tTape size: {}", tape.len());
+            println!("====================");
+            mlp.clear_parameters();
+            tape.clear();
         }
     }
 
     for sample in dataset {
         let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
-        let pred: Vec<_> = mlp.call(&input).iter().map(|x| x.value).collect();
-        tape.clean();
+        let pred: Vec<_> = mlp.call(tape, &input).iter().map(|x| x.value).collect();
         println!("Input: {:?}", sample.input);
         println!("Real: {:?}", sample.output);
         println!("Pred: {:?}", pred);
-        println!("====================")
+        println!("====================");
+        mlp.clear_parameters();
+        tape.clear();
     }
 }
