@@ -66,12 +66,12 @@ impl Tape {
 
     /// Add a variable to the tape and return it. A variable created this way does not depends on
     /// any other variable.
-    pub fn add_variable(&self, value: f64) -> Variable<'_> {
+    pub fn add_variable(&self, value: f64) -> Var<'_> {
         let index = {
             let id = self.len();
             self.add_node(id, id, 0.0, 0.0)
         };
-        Variable {
+        Var {
             index,
             value,
             tape: self,
@@ -82,18 +82,18 @@ impl Tape {
 /// A variable in the computation graph. Operation on variables return new variables and do not
 /// mutate the original ones.
 #[derive(Debug, Clone, Copy)]
-pub struct Variable<'ctx> {
+pub struct Var<'ctx> {
     pub value: f64,
-    index: usize,
+    pub index: usize,
     tape: &'ctx Tape,
 }
 
-impl<'ctx> Add for Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Add for Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value + rhs.value,
             index: self.tape.add_node(self.index, rhs.index, 1.0, 1.0),
             tape: self.tape,
@@ -101,12 +101,12 @@ impl<'ctx> Add for Variable<'ctx> {
     }
 }
 
-impl<'ctx> Add for &Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Add for &Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value + rhs.value,
             index: self.tape.add_node(self.index, rhs.index, 1.0, 1.0),
             tape: self.tape,
@@ -114,12 +114,12 @@ impl<'ctx> Add for &Variable<'ctx> {
     }
 }
 
-impl<'ctx> Sub for Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Sub for Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value - rhs.value,
             index: self.tape.add_node(self.index, rhs.index, 1.0, -1.0),
             tape: self.tape,
@@ -127,12 +127,12 @@ impl<'ctx> Sub for Variable<'ctx> {
     }
 }
 
-impl<'ctx> Sub for &Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Sub for &Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value - rhs.value,
             index: self.tape.add_node(self.index, rhs.index, 1.0, -1.0),
             tape: self.tape,
@@ -140,12 +140,12 @@ impl<'ctx> Sub for &Variable<'ctx> {
     }
 }
 
-impl<'ctx> Mul for Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Mul for Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value * rhs.value,
             index: self
                 .tape
@@ -155,12 +155,12 @@ impl<'ctx> Mul for Variable<'ctx> {
     }
 }
 
-impl<'ctx> Mul for &Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Mul for &Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value * rhs.value,
             index: self
                 .tape
@@ -170,12 +170,12 @@ impl<'ctx> Mul for &Variable<'ctx> {
     }
 }
 
-impl<'ctx> Div for Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Div for Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn div(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value / rhs.value,
             index: self.tape.add_node(
                 self.index,
@@ -188,12 +188,12 @@ impl<'ctx> Div for Variable<'ctx> {
     }
 }
 
-impl<'ctx> Div for &Variable<'ctx> {
-    type Output = Variable<'ctx>;
+impl<'ctx> Div for &Var<'ctx> {
+    type Output = Var<'ctx>;
 
     fn div(self, rhs: Self) -> Self::Output {
         assert_eq!(self.tape as *const Tape, rhs.tape as *const Tape);
-        Variable {
+        Var {
             value: self.value / rhs.value,
             index: self.tape.add_node(
                 self.index,
@@ -206,7 +206,7 @@ impl<'ctx> Div for &Variable<'ctx> {
     }
 }
 
-impl<'ctx> Variable<'ctx> {
+impl<'ctx> Var<'ctx> {
     pub fn gradients(&self) -> Vec<f64> {
         let mut gradients = vec![0.0; self.tape.len()];
         gradients[self.index] = 1.0;
@@ -226,7 +226,7 @@ impl<'ctx> Variable<'ctx> {
     }
 
     pub fn identity(&self) -> Self {
-        Variable {
+        Var {
             value: self.value,
             index: self.tape.add_node(self.index, self.index, 1.0, 0.0),
             tape: self.tape,
@@ -236,7 +236,7 @@ impl<'ctx> Variable<'ctx> {
     pub fn sigmoid(&self) -> Self {
         let exp = self.value.exp();
         let value = exp / (1.0 + exp);
-        Variable {
+        Var {
             value,
             index: self
                 .tape
@@ -248,9 +248,9 @@ impl<'ctx> Variable<'ctx> {
 
 /// A neuron holding a set of weights and a bias.
 struct Neuron<'a> {
-    bias: Variable<'a>,
-    weights: Vec<Variable<'a>>,
-    nonlinearity: fn(&Variable<'a>) -> Variable<'a>,
+    bias: Var<'a>,
+    weights: Vec<Var<'a>>,
+    nonlinearity: fn(&Var<'a>) -> Var<'a>,
 }
 
 impl<'a> Neuron<'a> {
@@ -259,7 +259,7 @@ impl<'a> Neuron<'a> {
         tape: &'a Tape,
         rng: &mut R,
         distribution: D,
-        nonlinearity: fn(&Variable<'a>) -> Variable<'a>,
+        nonlinearity: fn(&Var<'a>) -> Var<'a>,
         input_size: usize,
     ) -> Self
     where
@@ -276,7 +276,7 @@ impl<'a> Neuron<'a> {
     }
 
     /// Applies the neuron to the given input.
-    pub fn forward(&self, input: &[Variable<'a>]) -> Variable<'a> {
+    pub fn forward(&self, input: &[Var<'a>]) -> Var<'a> {
         assert_eq!(input.len(), self.weights.len());
         (self.nonlinearity)(
             &self
@@ -288,7 +288,7 @@ impl<'a> Neuron<'a> {
     }
 
     /// Returns a list of all parameters of the neuron.
-    fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
+    fn parameters(&mut self) -> Vec<&mut Var<'a>> {
         let mut params: Vec<_> = self.weights.iter_mut().collect();
         params.push(&mut self.bias);
         params
@@ -306,7 +306,7 @@ impl<'a> Layer<'a> {
         tape: &'a Tape,
         rng: &mut R,
         distribution: D,
-        nonlinearity: fn(&Variable<'a>) -> Variable<'a>,
+        nonlinearity: fn(&Var<'a>) -> Var<'a>,
         input_size: usize,
         output_size: usize,
     ) -> Self
@@ -322,7 +322,7 @@ impl<'a> Layer<'a> {
     }
 
     /// Applies the layer to the given input.
-    pub fn forward(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
+    pub fn forward(&self, input: &[Var<'a>]) -> Vec<Var<'a>> {
         self.neurons
             .iter()
             .map(|neuron| neuron.forward(input))
@@ -330,7 +330,7 @@ impl<'a> Layer<'a> {
     }
 
     /// Returns a list of all parameters of the layer.
-    fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
+    fn parameters(&mut self) -> Vec<&mut Var<'a>> {
         self.neurons
             .iter_mut()
             .flat_map(|neuron| neuron.parameters())
@@ -350,7 +350,7 @@ impl<'a> Mlp<'a> {
     }
 
     /// Applies the MLP to the given input.
-    pub fn forward(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
+    pub fn forward(&self, input: &[Var<'a>]) -> Vec<Var<'a>> {
         match self.layers.split_first() {
             Some((layer, ls)) => ls
                 .iter()
@@ -399,7 +399,7 @@ impl<'a> Mlp<'a> {
     }
 
     /// Returns a list of all parameters of the MLP.
-    fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
+    fn parameters(&mut self) -> Vec<&mut Var<'a>> {
         self.layers
             .iter_mut()
             .flat_map(|layer| layer.parameters())
@@ -410,8 +410,8 @@ impl<'a> Mlp<'a> {
         &self,
         tape: &'a Tape,
         sample: &Sample<M, N>,
-        metric: fn(&'a Tape, &[Variable<'a>], &[Variable<'a>]) -> Variable<'a>,
-    ) -> Variable {
+        metric: fn(&'a Tape, &[Var<'a>], &[Var<'a>]) -> Var<'a>,
+    ) -> Var {
         let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
         let output: Vec<_> = sample
             .output
@@ -426,8 +426,8 @@ impl<'a> Mlp<'a> {
         &self,
         tape: &'a Tape,
         samples: &[Sample<M, N>],
-        metric: fn(&'a Tape, &[Variable<'a>], &[Variable<'a>]) -> Variable<'a>,
-    ) -> Variable {
+        metric: fn(&'a Tape, &[Var<'a>], &[Var<'a>]) -> Var<'a>,
+    ) -> Var {
         let mut loss = tape.add_variable(0.0);
         for sample in samples {
             loss = loss + self.loss_sample(tape, sample, metric);
@@ -436,7 +436,7 @@ impl<'a> Mlp<'a> {
     }
 }
 
-fn mse<'a>(tape: &'a Tape, pred: &[Variable<'a>], output: &[Variable<'a>]) -> Variable<'a> {
+fn mse<'a>(tape: &'a Tape, pred: &[Var<'a>], output: &[Var<'a>]) -> Var<'a> {
     let mut loss = tape.add_variable(0.0);
     for (p, o) in pred.iter().zip(output) {
         let diff = p - o;

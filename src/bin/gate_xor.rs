@@ -28,8 +28,22 @@ fn main() {
     {
         let tape = reverse_tape::Tape::default();
         let mut mlp = reverse_tape::Mlp::new(vec![
-            reverse_tape::Layer::rand(&tape, &mut rng, distribution, reverse_tape::Variable::sigmoid, 2, 2),
-            reverse_tape::Layer::rand(&tape, &mut rng, distribution, reverse_tape::Variable::sigmoid, 2, 1),
+            reverse_tape::Layer::rand(
+                &tape,
+                &mut rng,
+                distribution,
+                reverse_tape::Var::sigmoid,
+                2,
+                2,
+            ),
+            reverse_tape::Layer::rand(
+                &tape,
+                &mut rng,
+                distribution,
+                reverse_tape::Var::sigmoid,
+                2,
+                1,
+            ),
         ]);
         mlp.train(&tape, &mut rng, &dataset, 100000, 4, 0.1, 20000);
         for sample in &dataset {

@@ -12,7 +12,7 @@ fn main() {
             &tape,
             &mut rng,
             distribution,
-            reverse_tape::Variable::identity,
+            reverse_tape::Var::identity,
             2,
             1,
         )]);

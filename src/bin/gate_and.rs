@@ -31,7 +31,7 @@ fn main() {
             &tape,
             &mut rng,
             distribution,
-            reverse_tape::Variable::sigmoid,
+            reverse_tape::Var::sigmoid,
             2,
             1,
         )]);
