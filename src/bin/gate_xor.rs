@@ -34,14 +34,14 @@ fn main() {
                 distribution,
                 reverse_tape::Var::sigmoid,
                 2,
-                2,
+                3,
             ),
             reverse_tape::Layer::rand(
                 &tape,
                 &mut rng,
                 distribution,
                 reverse_tape::Var::sigmoid,
-                2,
+                3,
                 1,
             ),
         ]);
@@ -57,8 +57,8 @@ fn main() {
     }
     {
         let mlp = reverse_graph::Mlp::new(vec![
-            reverse_graph::Layer::rand(&mut rng, &distribution, reverse_graph::Var::sigmoid, 2, 2),
-            reverse_graph::Layer::rand(&mut rng, &distribution, reverse_graph::Var::sigmoid, 2, 1),
+            reverse_graph::Layer::rand(&mut rng, &distribution, reverse_graph::Var::sigmoid, 2, 3),
+            reverse_graph::Layer::rand(&mut rng, &distribution, reverse_graph::Var::sigmoid, 3, 1),
         ]);
         mlp.train(&mut rng, &dataset, 100000, 4, 0.1, 20000);
         for sample in &dataset {
