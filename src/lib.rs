@@ -4,6 +4,7 @@
 #![warn(missing_docs)]
 
 pub mod autodiff;
+pub mod tensor;
 
 /// A sample input and output data.
 #[derive(Debug, Clone)]
