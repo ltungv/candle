@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
     ops::{Add, Div, Mul, Sub},
+    time,
 };
 
 use rand::{seq::SliceRandom, Rng};
@@ -243,35 +244,23 @@ impl<'ctx> Variable<'ctx> {
             tape: self.tape,
         }
     }
-
-    pub fn relu(&self) -> Self {
-        let value = if self.value > 0.0 { self.value } else { 0.0 };
-        Variable {
-            value,
-            index: self.tape.add_node(self.index, self.index, value, 0.0),
-            tape: self.tape,
-        }
-    }
 }
-
-/// A unary operation on variable.
-type UnaryOp<T> = fn(&T) -> T;
 
 /// A neuron holding a set of weights and a bias.
 struct Neuron<'a> {
     bias: Variable<'a>,
     weights: Vec<Variable<'a>>,
-    nonlinearity: UnaryOp<Variable<'a>>,
+    nonlinearity: fn(&Variable<'a>) -> Variable<'a>,
 }
 
 impl<'a> Neuron<'a> {
     /// Create a new f32 neuron with randomized weights and bias.
-    pub fn new<R, D>(
+    pub fn rand<R, D>(
         tape: &'a Tape,
-        input_size: usize,
-        nonlinearity: UnaryOp<Variable<'a>>,
         rng: &mut R,
         distribution: D,
+        nonlinearity: fn(&Variable<'a>) -> Variable<'a>,
+        input_size: usize,
     ) -> Self
     where
         R: rand::Rng,
@@ -286,23 +275,23 @@ impl<'a> Neuron<'a> {
         }
     }
 
-    /// Returns a list of all parameters of the neuron.
-    pub fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
-        let mut params: Vec<_> = self.weights.iter_mut().collect();
-        params.push(&mut self.bias);
-        params
-    }
-
     /// Applies the neuron to the given input.
-    pub fn call(&self, input: &[Variable<'a>]) -> Variable<'a> {
+    pub fn forward(&self, input: &[Variable<'a>]) -> Variable<'a> {
         assert_eq!(input.len(), self.weights.len());
         (self.nonlinearity)(
             &self
                 .weights
                 .iter()
                 .zip(input)
-                .fold(self.bias.identity(), |acc, (w, x)| acc + w * x),
+                .fold(self.bias, |acc, (w, x)| acc + w * x),
         )
+    }
+
+    /// Returns a list of all parameters of the neuron.
+    fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
+        let mut params: Vec<_> = self.weights.iter_mut().collect();
+        params.push(&mut self.bias);
+        params
     }
 }
 
@@ -313,13 +302,13 @@ pub struct Layer<'a> {
 
 impl<'a> Layer<'a> {
     /// Create a new f32 layer with randomized neurons.
-    pub fn new<R, D>(
+    pub fn rand<R, D>(
         tape: &'a Tape,
-        input_size: usize,
-        output_size: usize,
-        nonlinearity: UnaryOp<Variable<'a>>,
         rng: &mut R,
         distribution: D,
+        nonlinearity: fn(&Variable<'a>) -> Variable<'a>,
+        input_size: usize,
+        output_size: usize,
     ) -> Self
     where
         R: rand::Rng,
@@ -327,24 +316,24 @@ impl<'a> Layer<'a> {
     {
         Self {
             neurons: (0..output_size)
-                .map(|_| Neuron::new(tape, input_size, nonlinearity, rng, distribution))
+                .map(|_| Neuron::rand(tape, rng, distribution, nonlinearity, input_size))
                 .collect(),
         }
     }
 
-    /// Returns a list of all parameters of the layer.
-    pub fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
+    /// Applies the layer to the given input.
+    pub fn forward(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
         self.neurons
-            .iter_mut()
-            .flat_map(|neuron| neuron.parameters())
+            .iter()
+            .map(|neuron| neuron.forward(input))
             .collect()
     }
 
-    /// Applies the layer to the given input.
-    pub fn call(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
+    /// Returns a list of all parameters of the layer.
+    fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
         self.neurons
-            .iter()
-            .map(|neuron| neuron.call(input))
+            .iter_mut()
+            .flat_map(|neuron| neuron.parameters())
             .collect()
     }
 }
@@ -360,94 +349,98 @@ impl<'a> Mlp<'a> {
         Self { layers }
     }
 
+    /// Applies the MLP to the given input.
+    pub fn forward(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
+        match self.layers.split_first() {
+            Some((layer, ls)) => ls
+                .iter()
+                .fold(layer.forward(input), |acc, layer| layer.forward(&acc)),
+            None => Vec::new(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn train<R, const M: usize, const N: usize>(
+        &mut self,
+        tape: &'a Tape,
+        rng: &mut R,
+        dataset: &[Sample<M, N>],
+        epochs: usize,
+        batch_size: usize,
+        learning_rate: f64,
+        print_interval: usize,
+    ) where
+        R: Rng,
+    {
+        tape.mark();
+        let start = time::Instant::now();
+        for epoch in 0..epochs {
+            let mut dataset = Vec::from(dataset);
+            dataset.shuffle(rng);
+            for batch in dataset.chunks(batch_size) {
+                let loss = self.loss_dataset(tape, batch, mse);
+                let gradients = loss.gradients();
+                for param in self.parameters() {
+                    param.learn(&gradients, learning_rate);
+                    param.zerograd();
+                }
+                // Clear all intermediate nodes in the tape (nodes whose index is greater
+                // than the marked index).
+                tape.clean();
+            }
+            if print_interval != 0 && (epoch + 1) % print_interval == 0 {
+                let loss = self.loss_dataset(tape, &dataset, mse);
+                tape.clean();
+                println!("epoch: {}, loss: {}", epoch + 1, loss.value);
+            }
+        }
+        let duration = time::Instant::now() - start;
+        println!("training took {}ms", duration.as_millis());
+    }
+
     /// Returns a list of all parameters of the MLP.
-    pub fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
+    fn parameters(&mut self) -> Vec<&mut Variable<'a>> {
         self.layers
             .iter_mut()
             .flat_map(|layer| layer.parameters())
             .collect()
     }
 
-    /// Applies the MLP to the given input.
-    pub fn call(&self, input: &[Variable<'a>]) -> Vec<Variable<'a>> {
-        match self.layers.split_first() {
-            Some((layer, ls)) => ls
-                .iter()
-                .fold(layer.call(input), |acc, layer| layer.call(&acc)),
-            None => Vec::new(),
+    fn loss_sample<const M: usize, const N: usize>(
+        &self,
+        tape: &'a Tape,
+        sample: &Sample<M, N>,
+        metric: fn(&'a Tape, &[Variable<'a>], &[Variable<'a>]) -> Variable<'a>,
+    ) -> Variable {
+        let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
+        let output: Vec<_> = sample
+            .output
+            .iter()
+            .map(|x| tape.add_variable(*x))
+            .collect();
+        let pred = self.forward(&input);
+        (metric)(tape, &pred, &output)
+    }
+
+    fn loss_dataset<const M: usize, const N: usize>(
+        &self,
+        tape: &'a Tape,
+        samples: &[Sample<M, N>],
+        metric: fn(&'a Tape, &[Variable<'a>], &[Variable<'a>]) -> Variable<'a>,
+    ) -> Variable {
+        let mut loss = tape.add_variable(0.0);
+        for sample in samples {
+            loss = loss + self.loss_sample(tape, sample, metric);
         }
+        loss / tape.add_variable(samples.len() as f64)
     }
 }
 
-pub fn mse<'a, const M: usize, const N: usize>(
-    tape: &'a Tape,
-    mlp: &Mlp<'a>,
-    dataset: &[Sample<M, N>],
-) -> Variable<'a> {
+fn mse<'a>(tape: &'a Tape, pred: &[Variable<'a>], output: &[Variable<'a>]) -> Variable<'a> {
     let mut loss = tape.add_variable(0.0);
-    for sample in dataset {
-        let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
-        let pred = mlp.call(&input);
-        let mut loss_sample = tape.add_variable(0.0);
-        for (p, o) in pred.iter().zip(sample.output) {
-            let diff = p - &tape.add_variable(o);
-            loss_sample = loss_sample + diff * diff;
-        }
-        loss_sample = loss_sample / tape.add_variable(sample.output.len() as f64);
-        loss = loss + loss_sample;
+    for (p, o) in pred.iter().zip(output) {
+        let diff = p - o;
+        loss = loss + diff * diff;
     }
-    loss / tape.add_variable(dataset.len() as f64)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn train_eval<'a, R, const M: usize, const N: usize>(
-    tape: &'a Tape,
-    mlp: &mut Mlp<'a>,
-    rng: &mut R,
-    dataset: &[Sample<M, N>],
-    epochs: usize,
-    batch_size: usize,
-    learning_rate: f64,
-    print_interval: usize,
-) where
-    R: Rng,
-{
-    // Mark the last index of the tape. At this point in time, nodes in the tape
-    // includes the variables in the MLP and in the dataset.
-    tape.mark();
-    println!("{} tape nodes", tape.len());
-
-    for epoch in 0..epochs {
-        let mut dataset = Vec::from(dataset);
-        dataset.shuffle(rng);
-        for batch in dataset.chunks(batch_size) {
-            let loss = mse(tape, mlp, batch);
-            let gradients = loss.gradients();
-            for param in mlp.parameters() {
-                param.learn(&gradients, learning_rate);
-                param.zerograd();
-            }
-            // Clear all intermediate nodes in the tape (nodes whose index is greater
-            // than the marked index).
-            tape.clean();
-        }
-        if print_interval != 0 && (epoch + 1) % print_interval == 0 {
-            // Compute the loss on the entire dataset.
-            let loss = mse(tape, mlp, &dataset);
-            println!("Epoch: {}, Loss: {}", epoch, loss.value);
-            println!("\tTape size: {}", tape.len());
-            tape.clean();
-            println!("\tTape size: {}", tape.len());
-        }
-    }
-
-    for sample in dataset {
-        let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
-        let pred: Vec<_> = mlp.call(&input).iter().map(|x| x.value).collect();
-        tape.clean();
-        println!("Input: {:?}", sample.input);
-        println!("Real: {:?}", sample.output);
-        println!("Pred: {:?}", pred);
-        println!("====================")
-    }
+    loss / tape.add_variable(output.len() as f64)
 }

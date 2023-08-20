@@ -1,4 +1,4 @@
-pub mod reverse;
+pub mod autodiff;
 
 #[derive(Debug, Clone)]
 pub struct Sample<const M: usize, const N: usize> {
