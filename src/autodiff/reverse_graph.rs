@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
+    hash::Hash,
     ops::{Add, Div, Mul, Sub},
     rc::Rc,
     time,
@@ -27,6 +28,19 @@ pub struct VarInner {
 #[derive(Debug, Clone)]
 pub struct Var {
     inner: Rc<RefCell<VarInner>>,
+}
+
+impl Eq for Var {}
+impl PartialEq for Var {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.as_ptr() == other.inner.as_ptr()
+    }
+}
+
+impl Hash for Var {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self.inner.as_ptr() as usize);
+    }
 }
 
 impl Add for Var {
@@ -229,14 +243,17 @@ impl Var {
 }
 
 pub struct VarIterator {
+    seen: HashSet<Var>,
     deque: VecDeque<Var>,
 }
 
 impl VarIterator {
     pub fn new(var: Var) -> Self {
+        let mut seen = HashSet::default();
+        seen.insert(var.clone());
         let mut deque = VecDeque::new();
         deque.push_back(var);
-        Self { deque }
+        Self { seen, deque }
     }
 }
 
@@ -248,7 +265,10 @@ impl Iterator for VarIterator {
         if let Some(it) = &item {
             let it = it.inner.borrow();
             for parent in it.call.from.iter().flatten() {
-                self.deque.push_back(parent.clone());
+                if !self.seen.contains(parent) {
+                    self.seen.insert(parent.clone());
+                    self.deque.push_back(parent.clone());
+                }
             }
         }
         item
