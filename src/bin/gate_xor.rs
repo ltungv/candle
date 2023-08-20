@@ -50,7 +50,7 @@ fn main() {
             let x1 = tape.add_variable(sample.input[0]);
             let x2 = tape.add_variable(sample.input[1]);
             let z = mlp.forward(&[x1, x2]);
-            println!("pred: {}", z[0].value);
+            println!("pred: {}", z[0].value());
             println!("real: {}", sample.output[0]);
             println!("================")
         }

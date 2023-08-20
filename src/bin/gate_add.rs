@@ -16,12 +16,12 @@ fn main() {
             2,
             1,
         )]);
-        mlp.train(&tape, &mut rng, &dataset, 100, 100, 0.01, 20);
+        mlp.train(&tape, &mut rng, &dataset, 100, 100, 0.1, 20);
         for sample in dataset.choose_multiple(&mut rng, 4) {
             let x1 = tape.add_variable(sample.input[0]);
             let x2 = tape.add_variable(sample.input[1]);
             let z = mlp.forward(&[x1, x2]);
-            println!("pred: {}", z[0].value);
+            println!("pred: {}", z[0].value());
             println!("real: {}", sample.output[0]);
             println!("================")
         }
@@ -34,7 +34,7 @@ fn main() {
             2,
             1,
         )]);
-        mlp.train(&mut rng, &dataset, 100, 100, 0.01, 20);
+        mlp.train(&mut rng, &dataset, 100, 100, 0.1, 20);
         for sample in dataset.choose_multiple(&mut rng, 5) {
             let x1 = reverse_graph::Var::new(sample.input[0]);
             let x2 = reverse_graph::Var::new(sample.input[1]);

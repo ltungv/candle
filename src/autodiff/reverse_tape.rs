@@ -83,8 +83,8 @@ impl Tape {
 /// mutate the original ones.
 #[derive(Debug, Clone, Copy)]
 pub struct Var<'ctx> {
-    pub value: f64,
-    pub index: usize,
+    value: f64,
+    index: usize,
     tape: &'ctx Tape,
 }
 
@@ -217,12 +217,13 @@ impl<'ctx> Var<'ctx> {
         gradients
     }
 
-    pub fn zerograd(&self) {
-        self.tape.zerograd(self.index);
+    pub fn value(&self) -> f64 {
+        self.value
     }
 
     pub fn learn(&mut self, gradients: &[f64], learning_rate: f64) {
         self.value -= learning_rate * gradients[self.index];
+        self.tape.zerograd(self.index);
     }
 
     pub fn identity(&self) -> Self {
@@ -382,7 +383,6 @@ impl<'a> Mlp<'a> {
                 let gradients = loss.gradients();
                 for param in self.parameters() {
                     param.learn(&gradients, learning_rate);
-                    param.zerograd();
                 }
                 // Clear all intermediate nodes in the tape (nodes whose index is greater
                 // than the marked index).
