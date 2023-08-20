@@ -1,3 +1,6 @@
+//! Reverse mode automatic differentiation on scalars. This implementation uses
+//! a tape to store the computation graph.
+
 use std::{
     cell::{Cell, RefCell},
     ops::{Add, Div, Mul, Sub},
@@ -207,6 +210,7 @@ impl<'ctx> Div for &Var<'ctx> {
 }
 
 impl<'ctx> Var<'ctx> {
+    /// Returns the gradient of the variable with respect to all variables in the tape.
     pub fn gradients(&self) -> Vec<f64> {
         let mut gradients = vec![0.0; self.tape.len()];
         gradients[self.index] = 1.0;
@@ -217,15 +221,18 @@ impl<'ctx> Var<'ctx> {
         gradients
     }
 
+    /// Returns the value of the variable.
     pub fn value(&self) -> f64 {
         self.value
     }
 
+    /// Apply gradient descent to the variable.
     pub fn learn(&mut self, gradients: &[f64], learning_rate: f64) {
         self.value -= learning_rate * gradients[self.index];
         self.tape.zerograd(self.index);
     }
 
+    /// Create a new variable using the same value as the current one.
     pub fn identity(&self) -> Self {
         Var {
             value: self.value,
@@ -234,6 +241,7 @@ impl<'ctx> Var<'ctx> {
         }
     }
 
+    /// Create a new variable using the sigmoid of the current value.
     pub fn sigmoid(&self) -> Self {
         let exp = self.value.exp();
         let value = exp / (1.0 + exp);
@@ -360,6 +368,7 @@ impl<'a> Mlp<'a> {
         }
     }
 
+    /// Train the MLP on the given dataset.
     #[allow(clippy::too_many_arguments)]
     pub fn train<R, const M: usize, const N: usize>(
         &mut self,
@@ -411,7 +420,7 @@ impl<'a> Mlp<'a> {
         tape: &'a Tape,
         sample: &Sample<M, N>,
         metric: fn(&'a Tape, &[Var<'a>], &[Var<'a>]) -> Var<'a>,
-    ) -> Var {
+    ) -> Var<'a> {
         let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
         let output: Vec<_> = sample
             .output
@@ -427,7 +436,7 @@ impl<'a> Mlp<'a> {
         tape: &'a Tape,
         samples: &[Sample<M, N>],
         metric: fn(&'a Tape, &[Var<'a>], &[Var<'a>]) -> Var<'a>,
-    ) -> Var {
+    ) -> Var<'a> {
         let mut loss = tape.add_variable(0.0);
         for sample in samples {
             loss = loss + self.loss_sample(tape, sample, metric);

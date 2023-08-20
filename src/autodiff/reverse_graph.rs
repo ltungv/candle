@@ -1,3 +1,6 @@
+//! Reverse mode automatic differentiation on scalars. This implementation uses
+//! a heap-allocated linked list to store the computation graph.
+
 use std::{
     cell::RefCell,
     collections::{HashSet, VecDeque},
@@ -19,12 +22,13 @@ struct Call {
 }
 
 #[derive(Debug)]
-pub struct VarInner {
+struct VarInner {
     value: f64,
     grad: f64,
     call: Call,
 }
 
+/// A scalar variable.
 #[derive(Debug, Clone)]
 pub struct Var {
     inner: Rc<RefCell<VarInner>>,
@@ -174,6 +178,7 @@ impl IntoIterator for &Var {
 }
 
 impl Var {
+    /// Creates a new variable with the given value.
     pub fn new(value: f64) -> Self {
         let call = Call {
             from: [None, None],
@@ -182,14 +187,18 @@ impl Var {
         Self::from_call(value, call)
     }
 
+    /// Gets the value of the variable.
     pub fn value(&self) -> f64 {
         self.inner.borrow().value
     }
 
+    /// Gets the gradient of the variable.
     pub fn grad(&self) -> f64 {
         self.inner.borrow().grad
     }
 
+    /// Computes the gradients of all variables in the graph
+    /// rooted at this variable.
     pub fn backward(&self) {
         self.inner.borrow_mut().grad = 1.0;
         for var in self {
@@ -197,12 +206,14 @@ impl Var {
         }
     }
 
+    /// Apply gradient descent to the variable.
     pub fn learn(&self, rate: f64) {
         let mut inner = self.inner.borrow_mut();
         inner.value -= rate * inner.grad;
         inner.grad = 0.0;
     }
 
+    /// Returns a new variable with the same value as this variable.
     pub fn identity(&self) -> Self {
         let value = self.inner.borrow().value;
         let call = Call {
@@ -212,6 +223,7 @@ impl Var {
         Var::from_call(value, call)
     }
 
+    /// Returns a new variable with the sigmoid of this variable.
     pub fn sigmoid(&self) -> Self {
         let exp = self.inner.borrow().value.exp();
         let value = exp / (1.0 + exp);
@@ -242,12 +254,14 @@ impl Var {
     }
 }
 
+/// An iterator over the variables in the computation graph rooted at some variable.
 pub struct VarIterator {
     seen: HashSet<Var>,
     deque: VecDeque<Var>,
 }
 
 impl VarIterator {
+    /// Creates a new iterator over the variables in the computation graph.
     pub fn new(var: Var) -> Self {
         let mut seen = HashSet::default();
         seen.insert(var.clone());
@@ -275,6 +289,7 @@ impl Iterator for VarIterator {
     }
 }
 
+/// A neuron with a bias and weights.
 pub struct Neuron {
     bias: Var,
     weights: Vec<Var>,
@@ -282,6 +297,7 @@ pub struct Neuron {
 }
 
 impl Neuron {
+    /// Creates a new neuron with random weights and bias.
     pub fn rand<R, D>(
         rng: &mut R,
         distribution: &D,
@@ -303,6 +319,7 @@ impl Neuron {
         }
     }
 
+    /// Computes the output of the neuron given an input.
     pub fn forward(&self, input: &[Var]) -> Var {
         assert_eq!(input.len(), self.weights.len());
         (self.activation)(
@@ -321,11 +338,13 @@ impl Neuron {
     }
 }
 
+/// A layer of neurons.
 pub struct Layer {
     neurons: Vec<Neuron>,
 }
 
 impl Layer {
+    /// Creates a new layer of neurons with random weights and biases.
     pub fn rand<R, D>(
         rng: &mut R,
         distribution: &D,
@@ -343,23 +362,29 @@ impl Layer {
         Self { neurons }
     }
 
+    /// Computes the output of the layer given an input.
     pub fn forward(&self, input: &[Var]) -> Vec<Var> {
         self.neurons.iter().map(|n| n.forward(input)).collect()
     }
 
+    /// Gets the parameters of the layer.
     pub fn parameters(&self) -> Vec<Var> {
         self.neurons.iter().flat_map(|n| n.parameters()).collect()
     }
 }
+
+/// A multi-layer perceptron.
 pub struct Mlp {
     layers: Vec<Layer>,
 }
 
 impl Mlp {
+    /// Creates a new multi-layer perceptron with the given layers.
     pub fn new(layers: Vec<Layer>) -> Self {
         Self { layers }
     }
 
+    /// Computes the output of the multi-layer perceptron given an input.
     pub fn forward(&self, input: &[Var]) -> Vec<Var> {
         match self.layers.split_first() {
             Some((layer, ls)) => ls
@@ -369,6 +394,7 @@ impl Mlp {
         }
     }
 
+    /// Trains the multi-layer perceptron on the given dataset.
     pub fn train<R, const M: usize, const N: usize>(
         &self,
         rng: &mut R,
