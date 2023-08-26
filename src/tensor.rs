@@ -5,7 +5,10 @@ pub mod layout;
 
 use std::sync::Arc;
 
-use self::{error::TensorError, layout::Layout};
+use self::{
+    error::TensorError,
+    layout::{Layout, LayoutIterator},
+};
 
 /// An N-dimension tensor.
 #[derive(Debug)]
@@ -48,7 +51,10 @@ impl<'a> IntoIterator for &'a Tensor {
     type IntoIter = TensorIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        TensorIterator::from(self)
+        Self::IntoIter {
+            tensor: self,
+            layout_iterator: self.layout.into_iter(),
+        }
     }
 }
 
@@ -80,36 +86,15 @@ impl Tensor {
 /// An iterator over a tensor.
 pub struct TensorIterator<'a> {
     tensor: &'a Tensor,
-    index: Vec<usize>,
-    exhausted: bool,
+    layout_iterator: LayoutIterator<'a>,
 }
 
 impl<'a> Iterator for TensorIterator<'a> {
     type Item = &'a f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.exhausted {
-            return None;
-        }
-        let position = self.tensor.layout.index_to_position(&self.index);
-        for (i, s) in self.tensor.layout.shape().iter().enumerate().rev() {
-            self.index[i] += 1;
-            if self.index[i] < *s {
-                break;
-            }
-            self.index[i] = 0;
-        }
-        self.exhausted = self.index.iter().all(|e| *e == 0);
-        Some(&self.tensor.data[position])
-    }
-}
-
-impl<'a> From<&'a Tensor> for TensorIterator<'a> {
-    fn from(tensor: &'a Tensor) -> Self {
-        Self {
-            tensor,
-            index: vec![0; tensor.layout.shape().len()],
-            exhausted: false,
-        }
+        self.layout_iterator
+            .next()
+            .map(|idx| &self.tensor.data[self.tensor.layout.index_to_position(&idx)])
     }
 }

@@ -21,6 +21,7 @@ impl From<&[usize]> for Layout {
         }
     }
 }
+
 impl<const N: usize> From<&[usize; N]> for Layout {
     fn from(shape: &[usize; N]) -> Self {
         let mut strides = vec![1; shape.len()];
@@ -30,6 +31,20 @@ impl<const N: usize> From<&[usize; N]> for Layout {
         Self {
             shape: shape.to_vec(),
             strides,
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Layout {
+    type Item = Vec<usize>;
+
+    type IntoIter = LayoutIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter {
+            layout: self,
+            index: vec![0; self.shape.len()],
+            exhausted: false,
         }
     }
 }
@@ -95,10 +110,37 @@ impl Layout {
     pub fn position_to_index(&self, position: usize) -> Vec<usize> {
         let mut index = Vec::with_capacity(self.shape.len());
         let mut remainder = position;
-        for s in self.strides() {
+        for s in &self.strides {
             index.push(remainder / s);
             remainder %= s;
         }
         index
+    }
+}
+
+/// An iterator over a tensor.
+pub struct LayoutIterator<'a> {
+    layout: &'a Layout,
+    index: Vec<usize>,
+    exhausted: bool,
+}
+
+impl<'a> Iterator for LayoutIterator<'a> {
+    type Item = Vec<usize>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.exhausted {
+            return None;
+        }
+        let index = self.index.clone();
+        for (i, s) in self.layout.shape.iter().enumerate().rev() {
+            self.index[i] += 1;
+            if self.index[i] < *s {
+                break;
+            }
+            self.index[i] = 0;
+        }
+        self.exhausted = self.index.iter().all(|e| *e == 0);
+        Some(index)
     }
 }
