@@ -2,10 +2,10 @@
 
 use std::{error, fmt};
 
-/// Error type for Tensor operations.
+/// An error for operations on tensor(s).
 #[derive(Clone, Debug)]
 pub enum TensorError {
-    /// An operation cannot be performed because of a shape mismatch.
+    /// An operation was performed on 2 objects with incompatible shapes.
     ShapeMismatch(Vec<usize>, Vec<usize>),
 }
 

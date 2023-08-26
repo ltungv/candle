@@ -1,8 +1,8 @@
-use candle::tensor::layout::Layout;
+use candle::tensor::layout::TensorLayout;
 
 #[test]
 fn test_layout_create() {
-    let l = Layout::from(&[2, 3, 4]);
+    let l = TensorLayout::from(&[2, 3, 4]);
     assert_eq!(l.shape(), &[2, 3, 4]);
     assert_eq!(l.strides(), &[12, 4, 1]);
     assert_eq!(l.elems(), 24);
@@ -10,7 +10,7 @@ fn test_layout_create() {
 
 #[test]
 fn test_layout_index_to_position() {
-    let l = Layout::from(&[2, 2, 2]);
+    let l = TensorLayout::from(&[2, 2, 2]);
 
     let pos = l.index_to_position(&[0, 0, 0]);
     assert_eq!(pos, 0);
@@ -39,7 +39,7 @@ fn test_layout_index_to_position() {
 
 #[test]
 fn test_layout_position_to_index() {
-    let l = Layout::from(&[2, 2, 2]);
+    let l = TensorLayout::from(&[2, 2, 2]);
 
     let pos = l.position_to_index(0);
     assert_eq!(pos, &[0, 0, 0]);
@@ -68,18 +68,44 @@ fn test_layout_position_to_index() {
 
 #[test]
 fn test_layout_expand() {
-    let l1 = Layout::from(&[1]);
+    let l1 = TensorLayout::from(&[1]);
     let l2 = l1.expand(&[3]).unwrap();
     assert_eq!(l2.shape(), &[3]);
     assert_eq!(l2.strides(), &[0]);
 
-    let l1 = Layout::from(&[1]);
+    let l1 = TensorLayout::from(&[1]);
     let l2 = l1.expand(&[3, 2]).unwrap();
     assert_eq!(l2.shape(), &[3, 2]);
     assert_eq!(l2.strides(), &[0, 0]);
 
-    let l1 = Layout::from(&[2, 1, 1]);
+    let l1 = TensorLayout::from(&[2, 1, 1]);
     let l2 = l1.expand(&[7, 2, 4, 5]).unwrap();
     assert_eq!(l2.shape(), &[7, 2, 4, 5]);
     assert_eq!(l2.strides(), &[0, 1, 0, 0]);
+
+    let l1 = TensorLayout::from(&[1, 1, 2]);
+    let l2 = l1.expand(&[4, 3, 2]).unwrap();
+    assert_eq!(l2.shape(), &[4, 3, 2]);
+    assert_eq!(l2.strides(), &[0, 0, 1]);
+}
+
+#[test]
+fn test_layout_broadcast() {
+    let s = TensorLayout::broadcast(&[1], &[3]).unwrap();
+    assert_eq!(s, &[3]);
+
+    let s = TensorLayout::broadcast(&[3], &[1]).unwrap();
+    assert_eq!(s, &[3]);
+
+    let s = TensorLayout::broadcast(&[2, 3], &[1]).unwrap();
+    assert_eq!(s, &[2, 3]);
+
+    let s = TensorLayout::broadcast(&[1], &[3, 2]).unwrap();
+    assert_eq!(s, &[3, 2]);
+
+    let s = TensorLayout::broadcast(&[2, 1, 4], &[7, 2, 4, 1]).unwrap();
+    assert_eq!(s, &[7, 2, 4, 4]);
+
+    let s = TensorLayout::broadcast(&[1, 4, 1, 2], &[1, 3, 1]).unwrap();
+    assert_eq!(s, &[1, 4, 3, 2]);
 }

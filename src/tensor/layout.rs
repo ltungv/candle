@@ -1,55 +1,67 @@
 //! Defines tensor layout.
 
+use std::iter;
+
 use super::error::TensorError;
 
-/// Describes how a tensor is laid out in memory.
+/// A description of how to translate between a contiguous memory array and an N-dimention array.
 #[derive(Debug, PartialEq)]
-pub struct Layout {
+pub struct TensorLayout {
+    /// The number of elements in each dimension.
     shape: Vec<usize>,
+    /// The number of elements in the memory array that need to be skipped to move to the next
+    /// element in each dimension.
     strides: Vec<usize>,
 }
 
-impl From<&[usize]> for Layout {
+impl From<Vec<usize>> for TensorLayout {
+    fn from(shape: Vec<usize>) -> Self {
+        let mut strides = vec![1; shape.len()];
+        for (i, s) in shape.iter().skip(1).enumerate().rev() {
+            strides[i] = strides[i + 1] * s;
+        }
+        Self { shape, strides }
+    }
+}
+
+impl From<&[usize]> for TensorLayout {
     fn from(shape: &[usize]) -> Self {
-        let mut strides = vec![1; shape.len()];
-        for (i, s) in shape.iter().skip(1).enumerate().rev() {
-            strides[i] = strides[i + 1] * s;
-        }
-        Self {
-            shape: shape.to_vec(),
-            strides,
-        }
+        TensorLayout::from(shape.to_vec())
     }
 }
 
-impl<const N: usize> From<&[usize; N]> for Layout {
+impl<const N: usize> From<&[usize; N]> for TensorLayout {
     fn from(shape: &[usize; N]) -> Self {
-        let mut strides = vec![1; shape.len()];
-        for (i, s) in shape.iter().skip(1).enumerate().rev() {
-            strides[i] = strides[i + 1] * s;
-        }
-        Self {
-            shape: shape.to_vec(),
-            strides,
-        }
+        TensorLayout::from(shape.to_vec())
     }
 }
 
-impl<'a> IntoIterator for &'a Layout {
-    type Item = Vec<usize>;
-
-    type IntoIter = LayoutIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter {
-            layout: self,
-            index: vec![0; self.shape.len()],
-            exhausted: false,
+impl TensorLayout {
+    /// Returns the shape of a broadcast between this layout and another shape.
+    pub fn broadcast(lhs: &[usize], rhs: &[usize]) -> Result<Vec<usize>, TensorError> {
+        let (small, large) = if lhs.len() < rhs.len() {
+            (lhs, rhs)
+        } else {
+            (rhs, lhs)
+        };
+        let mut new_shape = Vec::with_capacity(large.len());
+        for sizes in small
+            .iter()
+            .rev()
+            .chain(iter::once(&1usize).cycle())
+            .zip(large.iter().rev())
+        {
+            match sizes {
+                (1, d) => new_shape.push(*d),
+                (d, 1) => new_shape.push(*d),
+                (dx, dy) if dx == dy => new_shape.push(*dx),
+                _ => return Err(TensorError::ShapeMismatch(lhs.to_vec(), rhs.to_vec())),
+            }
         }
+        new_shape.reverse();
+        Ok(new_shape)
     }
-}
 
-impl Layout {
     /// Returns the shape of a tensor.
     pub fn shape(&self) -> &[usize] {
         self.shape.as_slice()
@@ -116,16 +128,26 @@ impl Layout {
         }
         index
     }
+
+    /// Returns an iterator over the indices of a tensor.
+    pub fn iter_index(&self) -> IndexIterator<'_> {
+        IndexIterator::from(self)
+    }
+
+    /// Returns an iterator over the internal buffer positions of a tensor.
+    pub fn iter_position(&self) -> PositionIterator<'_> {
+        PositionIterator::from(self)
+    }
 }
 
-/// An iterator over a tensor.
-pub struct LayoutIterator<'a> {
-    layout: &'a Layout,
+/// An iterator over a tensor's indices.
+pub struct IndexIterator<'a> {
+    layout: &'a TensorLayout,
     index: Vec<usize>,
     exhausted: bool,
 }
 
-impl<'a> Iterator for LayoutIterator<'a> {
+impl<'a> Iterator for IndexIterator<'a> {
     type Item = Vec<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -142,5 +164,40 @@ impl<'a> Iterator for LayoutIterator<'a> {
         }
         self.exhausted = self.index.iter().all(|e| *e == 0);
         Some(index)
+    }
+}
+
+impl<'a> From<&'a TensorLayout> for IndexIterator<'a> {
+    fn from(layout: &'a TensorLayout) -> Self {
+        Self {
+            layout,
+            index: vec![0; layout.shape.len()],
+            exhausted: false,
+        }
+    }
+}
+
+/// An iterator over a tensor's internal buffer positions.
+pub struct PositionIterator<'a> {
+    layout: &'a TensorLayout,
+    index_iterator: IndexIterator<'a>,
+}
+
+impl<'a> Iterator for PositionIterator<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.index_iterator
+            .next()
+            .map(|index| self.layout.index_to_position(&index))
+    }
+}
+
+impl<'a> From<&'a TensorLayout> for PositionIterator<'a> {
+    fn from(layout: &'a TensorLayout) -> Self {
+        Self {
+            layout,
+            index_iterator: IndexIterator::from(layout),
+        }
     }
 }
