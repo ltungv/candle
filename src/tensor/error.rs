@@ -1,7 +1,11 @@
+//! Defines tensor errors.
+
 use std::{error, fmt};
 
+/// Error type for Tensor operations.
 #[derive(Clone, Debug)]
 pub enum TensorError {
+    /// An operation cannot be performed because of a shape mismatch.
     ShapeMismatch(Vec<usize>, Vec<usize>),
 }
 

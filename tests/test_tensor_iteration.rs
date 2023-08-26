@@ -16,7 +16,7 @@ fn test_tensor_iterator() {
         16f32, 17f32, 18f32, 19f32, 
         20f32, 21f32, 22f32, 23f32,
     ];
-    let t = Tensor::new(&data, Layout::new(&[2, 3, 4])).unwrap();
+    let t = Tensor::new(&data, Layout::from(&[2, 3, 4])).unwrap();
     for (x, y) in t.into_iter().zip(&data) {
         assert_eq!(*x, *y);
     }

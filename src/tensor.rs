@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use self::{error::TensorError, layout::Layout};
 
+/// An N-dimension tensor.
 #[derive(Debug)]
 pub struct Tensor {
     data: Arc<Vec<f32>>,
@@ -17,7 +18,7 @@ impl From<&[f32]> for Tensor {
     fn from(data: &[f32]) -> Self {
         Self {
             data: Arc::new(data.to_vec()),
-            layout: Layout::new(&[data.len()]),
+            layout: Layout::from(&[data.len()]),
         }
     }
 }
@@ -26,7 +27,7 @@ impl<const N: usize> From<[f32; N]> for Tensor {
     fn from(data: [f32; N]) -> Self {
         Self {
             data: Arc::new(data.to_vec()),
-            layout: Layout::new(&[data.len()]),
+            layout: Layout::from(&[data.len()]),
         }
     }
 }
@@ -36,7 +37,7 @@ impl From<Vec<f32>> for Tensor {
         let data_len = data.len();
         Self {
             data: Arc::new(data),
-            layout: Layout::new(&[data_len]),
+            layout: Layout::from(&[data_len]),
         }
     }
 }
@@ -52,6 +53,7 @@ impl<'a> IntoIterator for &'a Tensor {
 }
 
 impl Tensor {
+    /// Creates a new tensor using the given data and layout.
     pub fn new(data: &[f32], layout: Layout) -> Result<Self, TensorError> {
         if layout.elems() != data.len() {
             return Err(TensorError::ShapeMismatch(
@@ -65,6 +67,7 @@ impl Tensor {
         })
     }
 
+    /// Expands the tensor to the given shape without cloning its data.
     pub fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
         let layout = self.layout.expand(shape)?;
         Ok(Self {
@@ -74,6 +77,7 @@ impl Tensor {
     }
 }
 
+/// An iterator over a tensor.
 pub struct TensorIterator<'a> {
     tensor: &'a Tensor,
     index: Vec<usize>,
