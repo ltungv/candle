@@ -1,4 +1,4 @@
-use candle::tensor::layout::TensorLayout;
+use candle::tensor::layout::{broadcast_shape, TensorLayout};
 
 #[test]
 fn test_layout_create() {
@@ -91,21 +91,21 @@ fn test_layout_expand() {
 
 #[test]
 fn test_layout_broadcast() {
-    let s = TensorLayout::broadcast(&[1], &[3]).unwrap();
+    let s = broadcast_shape(&[1], &[3]).unwrap();
     assert_eq!(s, &[3]);
 
-    let s = TensorLayout::broadcast(&[3], &[1]).unwrap();
+    let s = broadcast_shape(&[3], &[1]).unwrap();
     assert_eq!(s, &[3]);
 
-    let s = TensorLayout::broadcast(&[2, 3], &[1]).unwrap();
+    let s = broadcast_shape(&[2, 3], &[1]).unwrap();
     assert_eq!(s, &[2, 3]);
 
-    let s = TensorLayout::broadcast(&[1], &[3, 2]).unwrap();
+    let s = broadcast_shape(&[1], &[3, 2]).unwrap();
     assert_eq!(s, &[3, 2]);
 
-    let s = TensorLayout::broadcast(&[2, 1, 4], &[7, 2, 4, 1]).unwrap();
+    let s = broadcast_shape(&[2, 1, 4], &[7, 2, 4, 1]).unwrap();
     assert_eq!(s, &[7, 2, 4, 4]);
 
-    let s = TensorLayout::broadcast(&[1, 4, 1, 2], &[1, 3, 1]).unwrap();
+    let s = broadcast_shape(&[1, 4, 1, 2], &[1, 3, 1]).unwrap();
     assert_eq!(s, &[1, 4, 3, 2]);
 }

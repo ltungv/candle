@@ -37,31 +37,6 @@ impl<const N: usize> From<&[usize; N]> for TensorLayout {
 }
 
 impl TensorLayout {
-    /// Returns the shape of a broadcast between this layout and another shape.
-    pub fn broadcast(lhs: &[usize], rhs: &[usize]) -> Result<Vec<usize>, TensorError> {
-        let (small, large) = if lhs.len() < rhs.len() {
-            (lhs, rhs)
-        } else {
-            (rhs, lhs)
-        };
-        let mut new_shape = Vec::with_capacity(large.len());
-        for sizes in small
-            .iter()
-            .rev()
-            .chain(iter::once(&1usize).cycle())
-            .zip(large.iter().rev())
-        {
-            match sizes {
-                (1, d) => new_shape.push(*d),
-                (d, 1) => new_shape.push(*d),
-                (dx, dy) if dx == dy => new_shape.push(*dx),
-                _ => return Err(TensorError::ShapeMismatch(lhs.to_vec(), rhs.to_vec())),
-            }
-        }
-        new_shape.reverse();
-        Ok(new_shape)
-    }
-
     /// Returns the shape of a tensor.
     pub fn shape(&self) -> &[usize] {
         self.shape.as_slice()
@@ -138,6 +113,31 @@ impl TensorLayout {
     pub fn iter_position(&self) -> PositionIterator<'_> {
         PositionIterator::from(self)
     }
+}
+
+/// Returns the shape of a broadcast between this layout and another shape.
+pub fn broadcast_shape(lhs: &[usize], rhs: &[usize]) -> Result<Vec<usize>, TensorError> {
+    let (small, large) = if lhs.len() < rhs.len() {
+        (lhs, rhs)
+    } else {
+        (rhs, lhs)
+    };
+    let mut new_shape = Vec::with_capacity(large.len());
+    for sizes in small
+        .iter()
+        .rev()
+        .chain(iter::once(&1usize).cycle())
+        .zip(large.iter().rev())
+    {
+        match sizes {
+            (1, d) => new_shape.push(*d),
+            (d, 1) => new_shape.push(*d),
+            (dx, dy) if dx == dy => new_shape.push(*dx),
+            _ => return Err(TensorError::ShapeMismatch(lhs.to_vec(), rhs.to_vec())),
+        }
+    }
+    new_shape.reverse();
+    Ok(new_shape)
 }
 
 /// An iterator over a tensor's indices.

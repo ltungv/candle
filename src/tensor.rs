@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use self::{
     error::TensorError,
-    layout::{PositionIterator, TensorLayout},
+    layout::{broadcast_shape, PositionIterator, TensorLayout},
 };
 
 /// An N-dimension array.
@@ -78,7 +78,7 @@ impl Tensor {
     where
         F: Fn(&f32, &f32) -> f32,
     {
-        let broadcasted_shape = TensorLayout::broadcast(self.layout.shape(), other.layout.shape())?;
+        let broadcasted_shape = broadcast_shape(self.layout.shape(), other.layout.shape())?;
         let mut res = Vec::with_capacity(broadcasted_shape.iter().product());
         let lhs = self.expand(&broadcasted_shape).unwrap();
         let rhs = other.expand(&broadcasted_shape).unwrap();
