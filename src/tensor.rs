@@ -107,6 +107,15 @@ impl Tensor {
         }
     }
 
+    /// Removes all singleton dimensions from the tensor.
+    pub fn squeeze(&self) -> Self {
+        let layout = self.layout.squeeze();
+        Self {
+            data: self.data.clone(),
+            layout,
+        }
+    }
+
     /// Transposes the tensor without cloning its data.
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
         let layout = self.layout.transpose(dim0, dim1)?;

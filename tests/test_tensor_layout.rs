@@ -9,6 +9,24 @@ fn test_layout_create() {
 }
 
 #[test]
+fn test_layout_squeeze() {
+    let layout = TensorLayout::from(&[1, 2, 3]);
+    let squeezed = layout.squeeze();
+    assert_eq!(squeezed.shape(), &[2, 3]);
+    assert_eq!(squeezed.strides(), &[3, 1]);
+
+    let layout = TensorLayout::from(&[2, 1, 3]);
+    let squeezed = layout.squeeze();
+    assert_eq!(squeezed.shape(), &[2, 3]);
+    assert_eq!(squeezed.strides(), &[3, 1]);
+
+    let layout = TensorLayout::from(&[2, 3, 1]);
+    let squeezed = layout.squeeze();
+    assert_eq!(squeezed.shape(), &[2, 3]);
+    assert_eq!(squeezed.strides(), &[3, 1]);
+}
+
+#[test]
 fn test_layout_transpose() {
     let layout = TensorLayout::from(&[2, 3, 4]);
 

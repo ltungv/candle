@@ -52,6 +52,19 @@ impl TensorLayout {
         self.shape.iter().product()
     }
 
+    /// Returns a new layout where all singleton dimensions are removed.
+    pub fn squeeze(&self) -> Self {
+        let mut shape = Vec::new();
+        let mut strides = Vec::new();
+        for (size, stride) in self.shape.iter().zip(self.strides.iter()) {
+            if *size != 1 {
+                shape.push(*size);
+                strides.push(*stride);
+            }
+        }
+        Self { shape, strides }
+    }
+
     /// Returns a new layout where the dimensions are transposed.
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
         if dim0 >= self.shape.len() {
