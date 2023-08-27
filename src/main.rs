@@ -42,4 +42,18 @@ fn main() {
     let t7 = t7.reshape(&[6, 2, 2, 1]).unwrap();
     println!("T7 Shape: {:?}", t7.layout().shape());
     println!("T7 Strides: {:?}", t7.layout().strides());
+
+    let t8 = t7.map(|x| *x * 420.0);
+    println!("T8 Shape: {:?}", t8.layout().shape());
+    println!("T8 Strides: {:?}", t8.layout().strides());
+    for x in &t8 {
+        println!("T8 elem: {:?}", x);
+    }
+
+    let t9 = t8.reduce(&[0, 1, 2], 1.0, |x, y| x + y).unwrap();
+    println!("T9 Shape: {:?}", t9.layout().shape());
+    println!("T9 Strides: {:?}", t9.layout().strides());
+    for x in &t9 {
+        println!("T9 elem: {:?}", x);
+    }
 }
