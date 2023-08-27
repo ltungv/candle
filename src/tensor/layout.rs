@@ -1,10 +1,10 @@
-//! Defines structs and functions to determine how N-dimension arrays are laid out in memory.
+//! Describes how N-dimension arrays are laid out in memory.
 
 use std::iter;
 
 use super::error::TensorError;
 
-/// A description of how to translate between a contiguous memory array and an N-dimention array.
+/// A description of how to translate between a contiguous memory array and an N-dimension array.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TensorLayout {
     /// The number of elements in each dimension.
@@ -55,7 +55,7 @@ impl TensorLayout {
     }
 
     /// Returns 2 layouts where the first is the layout of the reduced tensor and the second is the
-    /// reducer layout. The reducer layout is used to map an index in the input to a memory
+    /// reducer layout. The reducer layout is used to map an index in the input tensor to a memory
     /// position in the reduced tensor.
     pub fn reduce(&self, axis: &[usize]) -> Result<(Self, Self), TensorError> {
         let mut reduced_shape = self.shape.clone();
@@ -68,7 +68,7 @@ impl TensorLayout {
         let reduced_layout = Self::from(reduced_shape);
         let mut reducer_layout = reduced_layout.clone();
         for &d in axis {
-            // The reducer layout is the same as the reduced layout, except that the strides of the reduced
+            // The reducer layout is similar to the reduced layout, except that the strides of the reduced
             // dimensions are set to 0. By setting the stride of the reduced dimension to 0, we can map
             // multiple elements within the input dimension to the same element in the reduced dimension.
             reducer_layout.strides[d] = 0;
@@ -106,19 +106,19 @@ impl TensorLayout {
 
     /// Returns a new layout where the dimensions are permuted.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
-        let mut cumsum = 0;
+        let mut sum_axis = 0;
         let mut shape = Vec::with_capacity(self.shape.len());
         let mut strides = Vec::with_capacity(self.strides.len());
         for &d in permutation {
             if d >= self.shape.len() {
                 return Err(TensorError::UnknownAxis(d));
             }
-            cumsum += d;
+            sum_axis += d;
             shape.push(self.shape[d]);
             strides.push(self.strides[d]);
         }
         let num_axis = permutation.len();
-        if num_axis * (num_axis - 1) / 2 != cumsum {
+        if num_axis * (num_axis - 1) / 2 != sum_axis {
             return Err(TensorError::Custom(
                 "Each axis must be specified exactly once.".to_string(),
             ));
@@ -160,7 +160,7 @@ impl TensorLayout {
 
     /// Returns a new layout for a tensor having the same number of elements
     /// but with a different shape. This function returns an error if the new
-    /// layout can't be accomodated without copying data.
+    /// layout can't be accommodated without copying data.
     pub fn reshape(&self, new_shape: &[usize]) -> Result<Option<Self>, TensorError> {
         if self.elems() != new_shape.iter().product() {
             return Err(TensorError::IncompatibleShapes(

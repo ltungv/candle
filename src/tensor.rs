@@ -73,7 +73,7 @@ impl Tensor {
     }
 
     /// Applies the binary function `op` to the two tensors, performing broadcast
-    /// when neccessary.
+    /// when necessary.
     pub fn broadcast<F>(&self, other: &Self, op: F) -> Result<Self, TensorError>
     where
         F: Fn(&f32, &f32) -> f32,
@@ -156,7 +156,7 @@ impl Tensor {
     }
 
     /// Expands the tensor to the given shape without cloning its data.
-    fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
+    pub fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
         let layout = self.layout.expand(shape)?;
         Ok(Self {
             data: self.data.clone(),
