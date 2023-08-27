@@ -72,8 +72,8 @@ impl Tensor {
         &self.layout
     }
 
-    /// Apply the binary function `op` to the two tensors, performing broadcast
-    /// when neccessary.
+    /// Applies the binary function `op` to the two tensors, performing broadcast
+    /// when necessary.
     pub fn broadcast<F>(&self, other: &Self, op: F) -> Result<Self, TensorError>
     where
         F: Fn(&f32, &f32) -> f32,
@@ -84,7 +84,7 @@ impl Tensor {
         Ok(lhs.zip(&rhs, op))
     }
 
-    /// Apply the unary function `op` to all elements in the tensor.
+    /// Applies the unary function `op` to all elements in the tensor.
     pub fn map(&self, op: impl Fn(&f32) -> f32) -> Self {
         let mut res = Vec::with_capacity(self.layout.elems());
         for x in self.into_iter() {
@@ -95,7 +95,8 @@ impl Tensor {
             layout: TensorLayout::from(self.layout.shape()),
         }
     }
-    /// Apply the unary function `op` to all elements in the tensor.
+
+    /// Applies the unary function `op` to all elements in the tensor.
     pub fn zip(&self, other: &Self, op: impl Fn(&f32, &f32) -> f32) -> Self {
         let mut res = Vec::with_capacity(self.layout.elems().min(other.layout.elems()));
         for (x, y) in self.into_iter().zip(other.into_iter()) {
@@ -104,6 +105,35 @@ impl Tensor {
         Self {
             data: Arc::new(res),
             layout: TensorLayout::from(self.layout.shape()),
+        }
+    }
+
+    /// Reduces all elements along the given axis into a single element using the given operation.
+    pub fn reduce(
+        &self,
+        axis: &[usize],
+        default: f32,
+        op: impl Fn(&f32, &f32) -> f32,
+    ) -> Result<Self, TensorError> {
+        let (layout, reducer) = self.layout.reduce(axis)?;
+        let mut reduced_data = vec![default; layout.elems()];
+        for idx in self.layout.iter_index() {
+            let input_pos = self.layout.index_to_position(&idx);
+            let reduced_pos = reducer.index_to_position(&idx);
+            reduced_data[reduced_pos] = op(&reduced_data[reduced_pos], &self.data[input_pos]);
+        }
+        Ok(Self {
+            data: Arc::new(reduced_data),
+            layout,
+        })
+    }
+
+    /// Removes all singleton dimensions from the tensor.
+    pub fn squeeze(&self) -> Self {
+        let layout = self.layout.squeeze();
+        Self {
+            data: self.data.clone(),
+            layout,
         }
     }
 
@@ -126,12 +156,23 @@ impl Tensor {
     }
 
     /// Expands the tensor to the given shape without cloning its data.
-    fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
+    pub fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
         let layout = self.layout.expand(shape)?;
         Ok(Self {
             data: self.data.clone(),
             layout,
         })
+    }
+
+    /// Reshapes the tensor to the given shape.
+    pub fn reshape(&self, shape: &[usize]) -> Result<Self, TensorError> {
+        match self.layout.reshape(shape)? {
+            Some(layout) => Ok(Self {
+                data: self.data.clone(),
+                layout,
+            }),
+            None => Self::from(self.data.as_ref().clone()).reshape(shape),
+        }
     }
 }
 
