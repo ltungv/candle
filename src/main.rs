@@ -19,7 +19,7 @@ fn main() {
         println!("{:?}", x);
     }
 
-    let t4 = t3.transpose();
+    let t4 = t3.transpose(0, 1);
     for x in &t4 {
         println!("{:?}", x);
     }

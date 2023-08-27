@@ -53,22 +53,29 @@ impl TensorLayout {
     }
 
     /// Returns a new layout where the dimensions are transposed.
-    pub fn transpose(&self) -> Self {
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
+        if dim0 >= self.shape.len() {
+            return Err(TensorError::UnknownAxis(dim0));
+        }
+        if dim1 >= self.shape.len() {
+            return Err(TensorError::UnknownAxis(dim1));
+        }
         let mut shape = self.shape.clone();
         let mut strides = self.strides.clone();
-        shape.reverse();
-        strides.reverse();
-        Self { shape, strides }
+        shape.swap(dim0, dim1);
+        strides.swap(dim0, dim1);
+        Ok(Self { shape, strides })
     }
 
     /// Returns a new layout where the dimensions are permuted.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
-        if permutation.iter().any(|x| *x >= self.shape.len()) {
-            return Err(TensorError::InvalidArgument(
-                "target axis must be smaller than the number of dimensions".to_string(),
-            ));
+        for axis in permutation {
+            if *axis >= self.shape.len() {
+                return Err(TensorError::UnknownAxis(*axis));
+            }
         }
-        if permutation.len() * (permutation.len() - 1) / 2 != permutation.iter().sum() {
+        let elems = permutation.len();
+        if elems * (elems - 1) / 2 != permutation.iter().sum() {
             return Err(TensorError::InvalidArgument(
                 "each axis must be specified exactly once".to_string(),
             ));

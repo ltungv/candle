@@ -2,91 +2,115 @@ use candle::tensor::layout::{broadcast_shape, TensorLayout};
 
 #[test]
 fn test_layout_create() {
-    let l = TensorLayout::from(&[2, 3, 4]);
-    assert_eq!(l.shape(), &[2, 3, 4]);
-    assert_eq!(l.strides(), &[12, 4, 1]);
-    assert_eq!(l.elems(), 24);
+    let layout = TensorLayout::from(&[2, 3, 4]);
+    assert_eq!(layout.elems(), 24);
+    assert_eq!(layout.shape(), &[2, 3, 4]);
+    assert_eq!(layout.strides(), &[12, 4, 1]);
 }
 
 #[test]
-fn test_layout_index_to_position() {
-    let l = TensorLayout::from(&[2, 2, 2]);
+fn test_layout_transpose() {
+    let layout = TensorLayout::from(&[2, 3, 4]);
 
-    let pos = l.index_to_position(&[0, 0, 0]);
-    assert_eq!(pos, 0);
+    let transposed = layout.transpose(0, 1).unwrap();
+    assert_eq!(transposed.shape(), &[3, 2, 4]);
+    assert_eq!(transposed.strides(), &[4, 12, 1]);
 
-    let pos = l.index_to_position(&[0, 0, 1]);
-    assert_eq!(pos, 1);
+    let transposed = layout.transpose(1, 0).unwrap();
+    assert_eq!(transposed.shape(), &[3, 2, 4]);
+    assert_eq!(transposed.strides(), &[4, 12, 1]);
 
-    let pos = l.index_to_position(&[0, 1, 0]);
-    assert_eq!(pos, 2);
+    let transposed = layout.transpose(0, 2).unwrap();
+    assert_eq!(transposed.shape(), &[4, 3, 2]);
+    assert_eq!(transposed.strides(), &[1, 4, 12]);
 
-    let pos = l.index_to_position(&[0, 1, 1]);
-    assert_eq!(pos, 3);
+    let transposed = layout.transpose(2, 0).unwrap();
+    assert_eq!(transposed.shape(), &[4, 3, 2]);
+    assert_eq!(transposed.strides(), &[1, 4, 12]);
 
-    let pos = l.index_to_position(&[1, 0, 0]);
-    assert_eq!(pos, 4);
+    let transposed = layout.transpose(1, 2).unwrap();
+    assert_eq!(transposed.shape(), &[2, 4, 3]);
+    assert_eq!(transposed.strides(), &[12, 1, 4]);
 
-    let pos = l.index_to_position(&[1, 0, 1]);
-    assert_eq!(pos, 5);
-
-    let pos = l.index_to_position(&[1, 1, 0]);
-    assert_eq!(pos, 6);
-
-    let pos = l.index_to_position(&[1, 1, 1]);
-    assert_eq!(pos, 7);
+    let transposed = layout.transpose(2, 1).unwrap();
+    assert_eq!(transposed.shape(), &[2, 4, 3]);
+    assert_eq!(transposed.strides(), &[12, 1, 4]);
 }
 
 #[test]
-fn test_layout_position_to_index() {
-    let l = TensorLayout::from(&[2, 2, 2]);
+fn test_layout_permute() {
+    let layout = TensorLayout::from(&[2, 3, 4]);
 
-    let pos = l.position_to_index(0);
-    assert_eq!(pos, &[0, 0, 0]);
+    let permuted = layout.permute(&[0, 1, 2]).unwrap();
+    assert_eq!(permuted.shape(), &[2, 3, 4]);
+    assert_eq!(permuted.strides(), &[12, 4, 1]);
 
-    let pos = l.position_to_index(1);
-    assert_eq!(pos, &[0, 0, 1]);
+    let permuted = layout.permute(&[0, 2, 1]).unwrap();
+    assert_eq!(permuted.shape(), &[2, 4, 3]);
+    assert_eq!(permuted.strides(), &[12, 1, 4]);
 
-    let pos = l.position_to_index(2);
-    assert_eq!(pos, &[0, 1, 0]);
+    let permuted = layout.permute(&[1, 0, 2]).unwrap();
+    assert_eq!(permuted.shape(), &[3, 2, 4]);
+    assert_eq!(permuted.strides(), &[4, 12, 1]);
 
-    let pos = l.position_to_index(3);
-    assert_eq!(pos, &[0, 1, 1]);
+    let permuted = layout.permute(&[1, 2, 0]).unwrap();
+    assert_eq!(permuted.shape(), &[3, 4, 2]);
+    assert_eq!(permuted.strides(), &[4, 1, 12]);
 
-    let pos = l.position_to_index(4);
-    assert_eq!(pos, &[1, 0, 0]);
+    let permuted = layout.permute(&[2, 0, 1]).unwrap();
+    assert_eq!(permuted.shape(), &[4, 2, 3]);
+    assert_eq!(permuted.strides(), &[1, 12, 4]);
 
-    let pos = l.position_to_index(5);
-    assert_eq!(pos, &[1, 0, 1]);
-
-    let pos = l.position_to_index(6);
-    assert_eq!(pos, &[1, 1, 0]);
-
-    let pos = l.position_to_index(7);
-    assert_eq!(pos, &[1, 1, 1]);
+    let permuted = layout.permute(&[2, 1, 0]).unwrap();
+    assert_eq!(permuted.shape(), &[4, 3, 2]);
+    assert_eq!(permuted.strides(), &[1, 4, 12]);
 }
 
 #[test]
 fn test_layout_expand() {
-    let l1 = TensorLayout::from(&[1]);
-    let l2 = l1.expand(&[3]).unwrap();
-    assert_eq!(l2.shape(), &[3]);
-    assert_eq!(l2.strides(), &[0]);
+    let layout = TensorLayout::from(&[1]);
+    let expanded = layout.expand(&[3]).unwrap();
+    assert_eq!(expanded.shape(), &[3]);
+    assert_eq!(expanded.strides(), &[0]);
 
-    let l1 = TensorLayout::from(&[1]);
-    let l2 = l1.expand(&[3, 2]).unwrap();
-    assert_eq!(l2.shape(), &[3, 2]);
-    assert_eq!(l2.strides(), &[0, 0]);
+    let layout = TensorLayout::from(&[1]);
+    let expanded = layout.expand(&[3, 2]).unwrap();
+    assert_eq!(expanded.shape(), &[3, 2]);
+    assert_eq!(expanded.strides(), &[0, 0]);
 
-    let l1 = TensorLayout::from(&[2, 1, 1]);
-    let l2 = l1.expand(&[7, 2, 4, 5]).unwrap();
-    assert_eq!(l2.shape(), &[7, 2, 4, 5]);
-    assert_eq!(l2.strides(), &[0, 1, 0, 0]);
+    let layout = TensorLayout::from(&[2, 1, 1]);
+    let expanded = layout.expand(&[7, 2, 4, 5]).unwrap();
+    assert_eq!(expanded.shape(), &[7, 2, 4, 5]);
+    assert_eq!(expanded.strides(), &[0, 1, 0, 0]);
 
-    let l1 = TensorLayout::from(&[1, 1, 2]);
-    let l2 = l1.expand(&[4, 3, 2]).unwrap();
-    assert_eq!(l2.shape(), &[4, 3, 2]);
-    assert_eq!(l2.strides(), &[0, 0, 1]);
+    let layout = TensorLayout::from(&[1, 1, 2]);
+    let expanded = layout.expand(&[4, 3, 2]).unwrap();
+    assert_eq!(expanded.shape(), &[4, 3, 2]);
+    assert_eq!(expanded.strides(), &[0, 0, 1]);
+}
+
+#[test]
+fn test_layout_index_to_position() {
+    let layout = TensorLayout::from(&[2, 2, 2]);
+    let indices: Vec<_> = (0..2)
+        .flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| vec![x, y, z])))
+        .collect();
+    for (exp, idx) in indices.iter().enumerate() {
+        let pos = layout.index_to_position(idx);
+        assert_eq!(pos, exp);
+    }
+}
+
+#[test]
+fn test_layout_position_to_index() {
+    let layout = TensorLayout::from(&[2, 2, 2]);
+    let indices: Vec<_> = (0..2)
+        .flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| vec![x, y, z])))
+        .collect();
+    for (pos, exp) in indices.iter().enumerate() {
+        let idx = layout.position_to_index(pos);
+        assert_eq!(idx.as_slice(), exp.as_slice());
+    }
 }
 
 #[test]
@@ -112,18 +136,12 @@ fn test_broadcast_shape() {
 
 #[test]
 fn test_layout_index_iterator() {
-    let mut expected = Vec::new();
-    for x in 0..2 {
-        for y in 0..3 {
-            for z in 0..4 {
-                expected.push(vec![x, y, z]);
-            }
-        }
-    }
-
     let layout = TensorLayout::from(&[2, 3, 4]);
-    for (i, out) in layout.iter_index().enumerate() {
-        assert_eq!(out, expected[i]);
+    let indices: Vec<_> = (0..2)
+        .flat_map(|x| (0..3).flat_map(move |y| (0..4).map(move |z| vec![x, y, z])))
+        .collect();
+    for (i, idx) in layout.iter_index().enumerate() {
+        assert_eq!(idx, indices[i]);
     }
 }
 
