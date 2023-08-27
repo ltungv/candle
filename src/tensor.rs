@@ -56,7 +56,7 @@ impl Tensor {
     /// Creates a new tensor using the given data and layout.
     pub fn new(data: &[f32], layout: TensorLayout) -> Result<Self, TensorError> {
         if layout.elems() != data.len() {
-            return Err(TensorError::ShapeMismatch(
+            return Err(TensorError::IncompatibleShapes(
                 layout.shape().to_vec(),
                 vec![data.len()],
             ));
@@ -74,20 +74,54 @@ impl Tensor {
 
     /// Apply the binary function `op` to the two tensors, performing broadcast
     /// when neccessary.
-    pub fn broadcasted_apply<F>(&self, other: &Self, op: F) -> Result<Self, TensorError>
+    pub fn broadcast<F>(&self, other: &Self, op: F) -> Result<Self, TensorError>
     where
         F: Fn(&f32, &f32) -> f32,
     {
         let broadcasted_shape = broadcast_shape(self.layout.shape(), other.layout.shape())?;
-        let mut res = Vec::with_capacity(broadcasted_shape.iter().product());
-        let lhs = self.expand(&broadcasted_shape).unwrap();
-        let rhs = other.expand(&broadcasted_shape).unwrap();
-        for (x, y) in lhs.into_iter().zip(rhs.into_iter()) {
+        let lhs = self.expand(&broadcasted_shape)?;
+        let rhs = other.expand(&broadcasted_shape)?;
+        Ok(lhs.zip(&rhs, op))
+    }
+
+    /// Apply the unary function `op` to all elements in the tensor.
+    pub fn map(&self, op: impl Fn(&f32) -> f32) -> Self {
+        let mut res = Vec::with_capacity(self.layout.elems());
+        for x in self.into_iter() {
+            res.push(op(x));
+        }
+        Self {
+            data: Arc::new(res),
+            layout: TensorLayout::from(self.layout.shape()),
+        }
+    }
+    /// Apply the unary function `op` to all elements in the tensor.
+    pub fn zip(&self, other: &Self, op: impl Fn(&f32, &f32) -> f32) -> Self {
+        let mut res = Vec::with_capacity(self.layout.elems().min(other.layout.elems()));
+        for (x, y) in self.into_iter().zip(other.into_iter()) {
             res.push(op(x, y));
         }
-        Ok(Self {
+        Self {
             data: Arc::new(res),
-            layout: TensorLayout::from(broadcasted_shape),
+            layout: TensorLayout::from(self.layout.shape()),
+        }
+    }
+
+    /// Transposes the tensor without cloning its data.
+    pub fn transpose(&self) -> Self {
+        let layout = self.layout.transpose();
+        Self {
+            data: self.data.clone(),
+            layout,
+        }
+    }
+
+    /// Transposes the tensor without cloning its data.
+    pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
+        let layout = self.layout.permute(permutation)?;
+        Ok(Self {
+            data: self.data.clone(),
+            layout,
         })
     }
 

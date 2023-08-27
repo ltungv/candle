@@ -52,6 +52,36 @@ impl TensorLayout {
         self.shape.iter().product()
     }
 
+    /// Returns a new layout where the dimensions are transposed.
+    pub fn transpose(&self) -> Self {
+        let mut shape = self.shape.clone();
+        let mut strides = self.strides.clone();
+        shape.reverse();
+        strides.reverse();
+        Self { shape, strides }
+    }
+
+    /// Returns a new layout where the dimensions are permuted.
+    pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
+        if permutation.iter().any(|x| *x >= self.shape.len()) {
+            return Err(TensorError::InvalidArgument(
+                "target axis must be smaller than the number of dimensions".to_string(),
+            ));
+        }
+        if permutation.len() * (permutation.len() - 1) / 2 != permutation.iter().sum() {
+            return Err(TensorError::InvalidArgument(
+                "each axis must be specified exactly once".to_string(),
+            ));
+        }
+        let mut shape = Vec::with_capacity(self.shape.len());
+        let mut strides = Vec::with_capacity(self.strides.len());
+        for i in permutation {
+            shape.push(self.shape[*i]);
+            strides.push(self.strides[*i]);
+        }
+        Ok(Self { shape, strides })
+    }
+
     /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
     /// Tensor can be also expanded to a larger number of dimensions, and the new ones will be
     /// appended at the front. For the new dimensions, the size cannot be set to -1. Expanding
@@ -72,7 +102,7 @@ impl TensorLayout {
                 new_shape[new_dim] = new_sz;
                 new_strides[new_dim] = 0;
             } else {
-                return Err(TensorError::ShapeMismatch(
+                return Err(TensorError::IncompatibleShapes(
                     self.shape.to_vec(),
                     shape.to_vec(),
                 ));
@@ -82,6 +112,21 @@ impl TensorLayout {
             shape: new_shape,
             strides: new_strides,
         })
+    }
+
+    /// Returns a new layout for a tensor having the same number of elements
+    /// but with a different shape. This function returns an error if the new
+    /// layout can't be accomodated without copying data.
+    pub fn reshape(&self, shape: &[usize]) -> Result<Self, TensorError> {
+        if self.elems() != shape.iter().product() {
+            return Err(TensorError::IncompatibleShapes(
+                self.shape.to_vec(),
+                shape.to_vec(),
+            ));
+        }
+        // 1. Check the new shape for joins/splits of the dimensions.
+        // 2. Ensure the joined/splitted dimensions are contiguous.
+        todo!()
     }
 
     /// Translates a tensor index into a position in the data buffer.
@@ -133,7 +178,7 @@ pub fn broadcast_shape(lhs: &[usize], rhs: &[usize]) -> Result<Vec<usize>, Tenso
             (1, d) => new_shape.push(*d),
             (d, 1) => new_shape.push(*d),
             (dx, dy) if dx == dy => new_shape.push(*dx),
-            _ => return Err(TensorError::ShapeMismatch(lhs.to_vec(), rhs.to_vec())),
+            _ => return Err(TensorError::IncompatibleShapes(lhs.to_vec(), rhs.to_vec())),
         }
     }
     new_shape.reverse();

@@ -6,7 +6,9 @@ use std::{error, fmt};
 #[derive(Clone, Debug)]
 pub enum TensorError {
     /// An operation was performed on 2 objects with incompatible shapes.
-    ShapeMismatch(Vec<usize>, Vec<usize>),
+    IncompatibleShapes(Vec<usize>, Vec<usize>),
+    /// Argument to a function is invalid.
+    InvalidArgument(String),
 }
 
 impl error::Error for TensorError {}
@@ -14,7 +16,10 @@ impl error::Error for TensorError {}
 impl fmt::Display for TensorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ShapeMismatch(l, r) => write!(f, "Shape mismatch {:?} and {:?}", l, r),
+            Self::IncompatibleShapes(l, r) => {
+                write!(f, "Incompatible shapes: {:?} and {:?}.", l, r)
+            }
+            Self::InvalidArgument(s) => write!(f, "Invalid argument: {:?}.", s),
         }
     }
 }

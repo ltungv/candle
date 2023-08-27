@@ -90,7 +90,7 @@ fn test_layout_expand() {
 }
 
 #[test]
-fn test_layout_broadcast() {
+fn test_broadcast_shape() {
     let s = broadcast_shape(&[1], &[3]).unwrap();
     assert_eq!(s, &[3]);
 
@@ -108,4 +108,29 @@ fn test_layout_broadcast() {
 
     let s = broadcast_shape(&[1, 4, 1, 2], &[1, 3, 1]).unwrap();
     assert_eq!(s, &[1, 4, 3, 2]);
+}
+
+#[test]
+fn test_layout_index_iterator() {
+    let mut expected = Vec::new();
+    for x in 0..2 {
+        for y in 0..3 {
+            for z in 0..4 {
+                expected.push(vec![x, y, z]);
+            }
+        }
+    }
+
+    let layout = TensorLayout::from(&[2, 3, 4]);
+    for (i, out) in layout.iter_index().enumerate() {
+        assert_eq!(out, expected[i]);
+    }
+}
+
+#[test]
+fn test_layout_position_iterator() {
+    let layout = TensorLayout::from(&[2, 3, 4]);
+    for (i, out) in layout.iter_position().enumerate() {
+        assert_eq!(out, i);
+    }
 }
