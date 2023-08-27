@@ -13,14 +13,33 @@ fn main() {
     println!("T3 Shape: {:?}", t3.layout().shape());
     println!("T3 Strides: {:?}", t3.layout().strides());
     for x in &t3 {
-        println!("{:?}", x);
-    }
-    for x in t3.layout().iter_position() {
-        println!("{:?}", x);
+        println!("T3 elem: {:?}", x);
     }
 
-    let t4 = t3.transpose(0, 1);
+    let t4 = t3.transpose(0, 1).unwrap();
+    println!("T4 Shape: {:?}", t4.layout().shape());
+    println!("T4 Strides: {:?}", t4.layout().strides());
     for x in &t4 {
-        println!("{:?}", x);
+        println!("T4 elem: {:?}", x);
     }
+
+    let t5 = t3.reduce(&[0], 0.0, |x, y| x + y).unwrap();
+    println!("T5 Shape: {:?}", t5.layout().shape());
+    println!("T5 Strides: {:?}", t5.layout().strides());
+    for x in &t5 {
+        println!("T5 elem: {:?}", x);
+    }
+
+    let t6 = t3.reduce(&[1], 0.0, |x, y| x + y).unwrap();
+    println!("T6 Shape: {:?}", t6.layout().shape());
+    println!("T6 Strides: {:?}", t6.layout().strides());
+    for x in &t6 {
+        println!("T6 elem: {:?}", x);
+    }
+
+    let data: Vec<_> = (0..24).map(|x| x as f32).collect();
+    let t7 = Tensor::new(&data, TensorLayout::from(&[2, 3, 4])).unwrap();
+    let t7 = t7.reshape(&[6, 2, 2, 1]).unwrap();
+    println!("T7 Shape: {:?}", t7.layout().shape());
+    println!("T7 Strides: {:?}", t7.layout().strides());
 }

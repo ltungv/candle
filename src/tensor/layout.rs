@@ -1,11 +1,11 @@
-//! Defines tensor layout.
+//! Defines structs and functions to determine how N-dimension arrays are laid out in memory.
 
 use std::iter;
 
 use super::error::TensorError;
 
 /// A description of how to translate between a contiguous memory array and an N-dimention array.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TensorLayout {
     /// The number of elements in each dimension.
     shape: Vec<usize>,
@@ -14,8 +14,10 @@ pub struct TensorLayout {
     strides: Vec<usize>,
 }
 
+/// Creates a contiguous layout based on the given shape.
 impl From<Vec<usize>> for TensorLayout {
     fn from(shape: Vec<usize>) -> Self {
+        // Go backwards through the shape to calculate the strides. The last stride is always 1.
         let mut strides = vec![1; shape.len()];
         for (i, s) in shape.iter().skip(1).enumerate().rev() {
             strides[i] = strides[i + 1] * s;
@@ -52,6 +54,28 @@ impl TensorLayout {
         self.shape.iter().product()
     }
 
+    /// Returns 2 layouts where the first is the layout of the reduced tensor and the second is the
+    /// reducer layout. The reducer layout is used to map an index in the input to a memory
+    /// position in the reduced tensor.
+    pub fn reduce(&self, axis: &[usize]) -> Result<(Self, Self), TensorError> {
+        let mut reduced_shape = self.shape.clone();
+        for &d in axis {
+            if d >= reduced_shape.len() {
+                return Err(TensorError::UnknownAxis(d));
+            }
+            reduced_shape[d] = 1;
+        }
+        let reduced_layout = Self::from(reduced_shape);
+        let mut reducer_layout = reduced_layout.clone();
+        for &d in axis {
+            // The reducer layout is the same as the reduced layout, except that the strides of the reduced
+            // dimensions are set to 0. By setting the stride of the reduced dimension to 0, we can map
+            // multiple elements within the input dimension to the same element in the reduced dimension.
+            reducer_layout.strides[d] = 0;
+        }
+        Ok((reduced_layout, reducer_layout))
+    }
+
     /// Returns a new layout where all singleton dimensions are removed.
     pub fn squeeze(&self) -> Self {
         let mut shape = Vec::new();
@@ -65,65 +89,65 @@ impl TensorLayout {
         Self { shape, strides }
     }
 
-    /// Returns a new layout where the dimensions are transposed.
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
-        if dim0 >= self.shape.len() {
-            return Err(TensorError::UnknownAxis(dim0));
+    /// Returns a new layout where the 2 dimensions are transposed.
+    pub fn transpose(&self, axis0: usize, axis1: usize) -> Result<Self, TensorError> {
+        if axis0 >= self.shape.len() {
+            return Err(TensorError::UnknownAxis(axis0));
         }
-        if dim1 >= self.shape.len() {
-            return Err(TensorError::UnknownAxis(dim1));
+        if axis1 >= self.shape.len() {
+            return Err(TensorError::UnknownAxis(axis1));
         }
         let mut shape = self.shape.clone();
         let mut strides = self.strides.clone();
-        shape.swap(dim0, dim1);
-        strides.swap(dim0, dim1);
+        shape.swap(axis0, axis1);
+        strides.swap(axis0, axis1);
         Ok(Self { shape, strides })
     }
 
     /// Returns a new layout where the dimensions are permuted.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
-        for axis in permutation {
-            if *axis >= self.shape.len() {
-                return Err(TensorError::UnknownAxis(*axis));
-            }
-        }
-        let elems = permutation.len();
-        if elems * (elems - 1) / 2 != permutation.iter().sum() {
-            return Err(TensorError::InvalidArgument(
-                "each axis must be specified exactly once".to_string(),
-            ));
-        }
+        let mut cumsum = 0;
         let mut shape = Vec::with_capacity(self.shape.len());
         let mut strides = Vec::with_capacity(self.strides.len());
-        for i in permutation {
-            shape.push(self.shape[*i]);
-            strides.push(self.strides[*i]);
+        for &d in permutation {
+            if d >= self.shape.len() {
+                return Err(TensorError::UnknownAxis(d));
+            }
+            cumsum += d;
+            shape.push(self.shape[d]);
+            strides.push(self.strides[d]);
+        }
+        let num_axis = permutation.len();
+        if num_axis * (num_axis - 1) / 2 != cumsum {
+            return Err(TensorError::Custom(
+                "Each axis must be specified exactly once.".to_string(),
+            ));
         }
         Ok(Self { shape, strides })
     }
 
     /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
+    ///
     /// Tensor can be also expanded to a larger number of dimensions, and the new ones will be
-    /// appended at the front. For the new dimensions, the size cannot be set to -1. Expanding
-    /// a tensor does not allocate new memory, but only creates a new view on the existing
-    /// tensor where a dimension of size one is expanded to a larger size by setting the stride
-    /// to 0. Any dimension of size 1 can be expanded to an arbitrary value without allocating
-    /// new memory.
+    /// appended at the front. For the new dimensions, the size cannot be set to -1.
+    ///
+    /// Expanding a tensor does not allocate new memory, but only creates a new view on the
+    /// existing existing tensor where a dimension of size one is expanded to a larger size by
+    /// setting the stride to 0. Any dimension of size 1 can be expanded to an arbitrary value
+    /// without allocating new memory.
     pub fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
-        let mut new_shape = shape.to_vec();
+        let new_shape = shape.to_vec();
         let mut new_strides = vec![0; shape.len()];
-        for (old_dim, new_dim) in (0..self.shape.len()).rev().zip((0..shape.len()).rev()) {
-            let old_sz = self.shape[old_dim];
-            let new_sz = shape[new_dim];
-            if old_sz == new_sz {
-                new_shape[new_dim] = old_sz;
-                new_strides[new_dim] = self.strides[old_dim];
-            } else if old_sz == 1 {
-                new_shape[new_dim] = new_sz;
-                new_strides[new_dim] = 0;
+        let new_axis = new_shape.iter().zip(new_strides.iter_mut()).rev();
+        let old_axis = self.shape.iter().zip(self.strides.iter()).rev();
+        for ((new_size, new_stride), (old_size, old_stride)) in new_axis.zip(old_axis) {
+            if old_size == new_size {
+                *new_stride = *old_stride;
+            } else if *old_size == 1 {
+                *new_stride = 0;
             } else {
                 return Err(TensorError::IncompatibleShapes(
-                    self.shape.to_vec(),
+                    self.shape.clone(),
                     shape.to_vec(),
                 ));
             }
@@ -137,16 +161,59 @@ impl TensorLayout {
     /// Returns a new layout for a tensor having the same number of elements
     /// but with a different shape. This function returns an error if the new
     /// layout can't be accomodated without copying data.
-    pub fn reshape(&self, shape: &[usize]) -> Result<Self, TensorError> {
-        if self.elems() != shape.iter().product() {
+    pub fn reshape(&self, new_shape: &[usize]) -> Result<Option<Self>, TensorError> {
+        if self.elems() != new_shape.iter().product() {
             return Err(TensorError::IncompatibleShapes(
                 self.shape.to_vec(),
-                shape.to_vec(),
+                new_shape.to_vec(),
             ));
         }
-        // 1. Check the new shape for joins/splits of the dimensions.
-        // 2. Ensure the joined/splitted dimensions are contiguous.
-        todo!()
+        let squeezed = self.squeeze();
+        let old_dims = squeezed.shape.len();
+        let old_shape = &squeezed.shape;
+        let old_strides = &squeezed.strides;
+        let new_dims = new_shape.len();
+        let mut new_strides = vec![0; new_dims];
+        let mut old_axis = 0;
+        let mut new_axis = 0;
+        while old_axis < old_dims && new_axis < new_dims {
+            let old_axis_prev = old_axis;
+            let new_axis_prev = new_axis;
+            let mut old_size = old_shape[old_axis];
+            let mut new_size = new_shape[new_axis];
+            while old_size != new_size {
+                if old_size < new_size {
+                    old_axis += 1;
+                    old_size *= old_shape[old_axis];
+                } else {
+                    new_axis += 1;
+                    new_size *= new_shape[new_axis];
+                }
+            }
+            if (old_axis_prev..old_axis)
+                .any(|axis| old_strides[axis] != old_strides[axis + 1] * old_shape[axis + 1])
+            {
+                return Ok(None);
+            }
+            new_strides[new_axis] = old_strides[old_axis];
+            for axis in (new_axis_prev + 1..=new_axis).rev() {
+                new_strides[axis - 1] = new_strides[axis] * new_shape[axis];
+            }
+            old_axis += 1;
+            new_axis += 1;
+        }
+        let last_stride = if new_axis > 0 {
+            new_strides[new_axis - 1]
+        } else {
+            1
+        };
+        for stride in new_strides.iter_mut().skip(new_axis) {
+            *stride = last_stride;
+        }
+        Ok(Some(Self {
+            shape: new_shape.to_vec(),
+            strides: new_strides,
+        }))
     }
 
     /// Translates a tensor index into a position in the data buffer.
