@@ -85,7 +85,10 @@ impl Tensor {
     }
 
     /// Applies the unary function `op` to all elements in the tensor.
-    pub fn map(&self, op: impl Fn(&f32) -> f32) -> Self {
+    pub fn map<F>(&self, op: F) -> Self
+    where
+        F: Fn(&f32) -> f32,
+    {
         let mut res = Vec::with_capacity(self.layout.elems());
         for x in self.into_iter() {
             res.push(op(x));
@@ -97,7 +100,10 @@ impl Tensor {
     }
 
     /// Applies the unary function `op` to all elements in the tensor.
-    pub fn zip(&self, other: &Self, op: impl Fn(&f32, &f32) -> f32) -> Self {
+    pub fn zip<F>(&self, other: &Self, op: F) -> Self
+    where
+        F: Fn(&f32, &f32) -> f32,
+    {
         let mut res = Vec::with_capacity(self.layout.elems().min(other.layout.elems()));
         for (x, y) in self.into_iter().zip(other.into_iter()) {
             res.push(op(x, y));
@@ -109,12 +115,10 @@ impl Tensor {
     }
 
     /// Reduces all elements along the given axis into a single element using the given operation.
-    pub fn reduce(
-        &self,
-        axis: &[usize],
-        default: f32,
-        op: impl Fn(&f32, &f32) -> f32,
-    ) -> Result<Self, TensorError> {
+    pub fn reduce<F>(&self, axis: &[usize], default: f32, op: F) -> Result<Self, TensorError>
+    where
+        F: Fn(&f32, &f32) -> f32,
+    {
         let (layout, reducer) = self.layout.reduce(axis)?;
         let mut reduced_data = vec![default; layout.elems()];
         for idx in self.layout.iter_index() {
