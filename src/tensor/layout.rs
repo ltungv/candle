@@ -164,19 +164,19 @@ impl TensorLayout {
     pub fn reshape(&self, new_shape: &[usize]) -> Result<Option<Self>, TensorError> {
         if self.elems() != new_shape.iter().product() {
             return Err(TensorError::IncompatibleShapes(
-                self.shape.to_vec(),
+                self.shape.clone(),
                 new_shape.to_vec(),
             ));
         }
         let squeezed = self.squeeze();
-        let old_dims = squeezed.shape.len();
         let old_shape = &squeezed.shape;
         let old_strides = &squeezed.strides;
-        let new_dims = new_shape.len();
-        let mut new_strides = vec![0; new_dims];
+        let mut new_strides = vec![0; new_shape.len()];
         let mut old_axis = 0;
         let mut new_axis = 0;
-        while old_axis < old_dims && new_axis < new_dims {
+        while old_axis < old_shape.len() && new_axis < new_shape.len() {
+            // Find the combination of dimensions from the old and new shapes that have the same
+            // number of elements.
             let old_axis_prev = old_axis;
             let new_axis_prev = new_axis;
             let mut old_size = old_shape[old_axis];
@@ -190,11 +190,13 @@ impl TensorLayout {
                     new_size *= new_shape[new_axis];
                 }
             }
+            // Check if the reshaped dimensions are non-contiguous in memory.
             if (old_axis_prev..old_axis)
                 .any(|axis| old_strides[axis] != old_strides[axis + 1] * old_shape[axis + 1])
             {
                 return Ok(None);
             }
+            // Build a strides backward.
             new_strides[new_axis] = old_strides[old_axis];
             for axis in (new_axis_prev + 1..=new_axis).rev() {
                 new_strides[axis - 1] = new_strides[axis] * new_shape[axis];
@@ -207,6 +209,7 @@ impl TensorLayout {
         } else {
             1
         };
+        // Fill in the remaining strides.
         for stride in new_strides.iter_mut().skip(new_axis) {
             *stride = last_stride;
         }
