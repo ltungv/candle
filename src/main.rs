@@ -1,11 +1,11 @@
-use candle::tensor::{layout::TensorLayout, Tensor};
+use candle::tensor::Tensor;
 
 fn main() {
-    let t1 = Tensor::new(&[2.0, 3.0, 4.0], TensorLayout::from(&[1, 3])).unwrap();
+    let t1 = Tensor::new(&[2.0, 3.0, 4.0], &[1, 3]).unwrap();
     println!("T1 Shape: {:?}", t1.layout().shape());
     println!("T1 Strides: {:?}", t1.layout().strides());
 
-    let t2 = Tensor::new(&[1.0, 2.0], TensorLayout::from(&[2, 1])).unwrap();
+    let t2 = Tensor::new(&[1.0, 2.0], &[2, 1]).unwrap();
     println!("T2 Shape: {:?}", t2.layout().shape());
     println!("T2 Strides: {:?}", t2.layout().strides());
 
@@ -38,7 +38,7 @@ fn main() {
     }
 
     let data: Vec<_> = (0..24).map(|x| x as f32).collect();
-    let t7 = Tensor::new(&data, TensorLayout::from(&[2, 3, 4])).unwrap();
+    let t7 = Tensor::new(&data, &[2, 3, 4]).unwrap();
     let t7 = t7.reshape(&[6, 2, 2, 1]).unwrap();
     println!("T7 Shape: {:?}", t7.layout().shape());
     println!("T7 Strides: {:?}", t7.layout().strides());

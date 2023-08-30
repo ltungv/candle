@@ -3,7 +3,10 @@
 pub mod error;
 pub mod layout;
 
-use std::rc::Rc;
+use std::{ops::Index, rc::Rc};
+
+use rand::Rng;
+use rand_distr::Distribution;
 
 use self::{
     error::TensorError,
@@ -47,6 +50,47 @@ impl From<&[f32]> for Tensor {
     }
 }
 
+impl Index<usize> for &Tensor {
+    type Output = f32;
+
+    fn index(&self, pos: usize) -> &Self::Output {
+        &self.data[pos]
+    }
+}
+
+impl Index<&[usize]> for &Tensor {
+    type Output = f32;
+
+    fn index(&self, index: &[usize]) -> &Self::Output {
+        let pos = self.layout.index_to_position(index);
+        &self[pos]
+    }
+}
+
+impl Index<Vec<usize>> for &Tensor {
+    type Output = f32;
+
+    fn index(&self, index: Vec<usize>) -> &Self::Output {
+        &self[index.as_slice()]
+    }
+}
+
+impl<const N: usize> Index<[usize; N]> for &Tensor {
+    type Output = f32;
+
+    fn index(&self, index: [usize; N]) -> &Self::Output {
+        &self[&index]
+    }
+}
+
+impl<const N: usize> Index<&[usize; N]> for &Tensor {
+    type Output = f32;
+
+    fn index(&self, index: &[usize; N]) -> &Self::Output {
+        &self[index.as_slice()]
+    }
+}
+
 impl<'a> IntoIterator for &'a Tensor {
     type Item = &'a f32;
 
@@ -62,10 +106,11 @@ impl<'a> IntoIterator for &'a Tensor {
 
 impl Tensor {
     /// Creates a new tensor using the given data and layout.
-    pub fn new(data: &[f32], layout: TensorLayout) -> Result<Self, TensorError> {
+    pub fn new(data: &[f32], shape: &[usize]) -> Result<Self, TensorError> {
+        let layout = TensorLayout::from(shape);
         if layout.elems() != data.len() {
             return Err(TensorError::IncompatibleShapes(
-                layout.shape().to_vec(),
+                shape.to_vec(),
                 vec![data.len()],
             ));
         }
@@ -73,6 +118,20 @@ impl Tensor {
             data: Rc::new(data.to_vec()),
             layout,
         })
+    }
+
+    /// Creates a new tensor with randomized data.
+    pub fn rand<R, D>(rng: R, distribution: D, shape: &[usize]) -> Self
+    where
+        R: Rng,
+        D: Distribution<f32>,
+    {
+        let layout = TensorLayout::from(shape);
+        let data = rng.sample_iter(distribution).take(layout.elems()).collect();
+        Self {
+            data: Rc::new(data),
+            layout,
+        }
     }
 
     /// Returns the layout of this tensor.
@@ -184,7 +243,7 @@ impl Tensor {
             layout: lhs_layout,
         };
         let rhs = Self {
-            data: self.data.clone(),
+            data: other.data.clone(),
             layout: rhs_layout,
         };
         Ok((lhs, rhs))

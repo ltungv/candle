@@ -1,25 +1,25 @@
+pub mod assert;
+
+use assert::assert_contiguous_layout;
 use candle::tensor::layout::TensorLayout;
 
+use crate::assert::{assert_expanded_layout, assert_reduced_layout};
+
 #[test]
-fn test_layout_create() {
+fn test_layout_convert_from_collections() {
     let data = [2, 3, 4];
-    let assert_layout = |layout: &TensorLayout| {
-        assert_eq!(layout.elems(), 24);
-        assert_eq!(layout.shape(), &[2, 3, 4]);
-        assert_eq!(layout.strides(), &[12, 4, 1]);
-    };
 
     let layout = TensorLayout::from(data.as_slice());
-    assert_layout(&layout);
+    assert_contiguous_layout(&layout, &data);
 
     let layout = TensorLayout::from(data.to_vec());
-    assert_layout(&layout);
+    assert_contiguous_layout(&layout, &data);
 
     let layout = TensorLayout::from(&data);
-    assert_layout(&layout);
+    assert_contiguous_layout(&layout, &data);
 
     let layout = TensorLayout::from(data);
-    assert_layout(&layout);
+    assert_contiguous_layout(&layout, &data);
 }
 
 #[test]
@@ -27,58 +27,41 @@ fn test_layout_reduce() {
     let layout = TensorLayout::from(&[2, 3, 4]);
 
     let (reduced, reducer) = layout.reduce(&[0]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 3, 4]);
-    assert_eq!(reduced.strides(), &[12, 4, 1]);
-    assert_eq!(reducer.shape(), &[1, 3, 4]);
-    assert_eq!(reducer.strides(), &[0, 4, 1]);
+    assert_reduced_layout(&reduced, &reducer, &[0], &[1, 3, 4]);
 
     let (reduced, reducer) = layout.reduce(&[1]).unwrap();
-    assert_eq!(reduced.shape(), &[2, 1, 4]);
-    assert_eq!(reduced.strides(), &[4, 4, 1]);
-    assert_eq!(reducer.shape(), &[2, 1, 4]);
-    assert_eq!(reducer.strides(), &[4, 0, 1]);
+    assert_reduced_layout(&reduced, &reducer, &[1], &[2, 1, 4]);
 
     let (reduced, reducer) = layout.reduce(&[2]).unwrap();
-    assert_eq!(reduced.shape(), &[2, 3, 1]);
-    assert_eq!(reduced.strides(), &[3, 1, 1]);
-    assert_eq!(reducer.shape(), &[2, 3, 1]);
-    assert_eq!(reducer.strides(), &[3, 1, 0]);
+    assert_reduced_layout(&reduced, &reducer, &[2], &[2, 3, 1]);
 
     let (reduced, reducer) = layout.reduce(&[0, 1]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 1, 4]);
-    assert_eq!(reduced.strides(), &[4, 4, 1]);
-    assert_eq!(reducer.shape(), &[1, 1, 4]);
-    assert_eq!(reducer.strides(), &[0, 0, 1]);
+    assert_reduced_layout(&reduced, &reducer, &[0, 1], &[1, 1, 4]);
 
     let (reduced, reducer) = layout.reduce(&[0, 2]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 3, 1]);
-    assert_eq!(reduced.strides(), &[3, 1, 1]);
-    assert_eq!(reducer.shape(), &[1, 3, 1]);
-    assert_eq!(reducer.strides(), &[0, 1, 0]);
+    assert_reduced_layout(&reduced, &reducer, &[0, 2], &[1, 3, 1]);
 
     let (reduced, reducer) = layout.reduce(&[0, 1, 2]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 1, 1]);
-    assert_eq!(reduced.strides(), &[1, 1, 1]);
-    assert_eq!(reducer.shape(), &[1, 1, 1]);
-    assert_eq!(reducer.strides(), &[0, 0, 0]);
+    assert_reduced_layout(&reduced, &reducer, &[0, 1, 2], &[1, 1, 1]);
 }
 
 #[test]
 fn test_layout_squeeze() {
     let layout = TensorLayout::from(&[1, 2, 3]);
     let squeezed = layout.squeeze();
-    assert_eq!(squeezed.shape(), &[2, 3]);
-    assert_eq!(squeezed.strides(), &[3, 1]);
+    assert_contiguous_layout(&squeezed, &[2, 3]);
 
     let layout = TensorLayout::from(&[2, 1, 3]);
     let squeezed = layout.squeeze();
-    assert_eq!(squeezed.shape(), &[2, 3]);
-    assert_eq!(squeezed.strides(), &[3, 1]);
+    assert_contiguous_layout(&squeezed, &[2, 3]);
 
     let layout = TensorLayout::from(&[2, 3, 1]);
     let squeezed = layout.squeeze();
-    assert_eq!(squeezed.shape(), &[2, 3]);
-    assert_eq!(squeezed.strides(), &[3, 1]);
+    assert_contiguous_layout(&squeezed, &[2, 3]);
+
+    let layout = TensorLayout::from(&[1, 1, 1]);
+    let squeezed = layout.squeeze();
+    assert_contiguous_layout(&squeezed, &[]);
 }
 
 #[test]
@@ -143,74 +126,58 @@ fn test_layout_permute() {
 fn test_layout_expand() {
     let layout = TensorLayout::from(&[1]);
     let expanded = layout.expand(&[3]).unwrap();
-    assert_eq!(expanded.shape(), &[3]);
-    assert_eq!(expanded.strides(), &[0]);
+    assert_expanded_layout(&expanded, &layout, &[3]);
 
     let layout = TensorLayout::from(&[1]);
     let expanded = layout.expand(&[3, 2]).unwrap();
-    assert_eq!(expanded.shape(), &[3, 2]);
-    assert_eq!(expanded.strides(), &[0, 0]);
+    assert_expanded_layout(&expanded, &layout, &[3, 2]);
 
     let layout = TensorLayout::from(&[2, 1, 1]);
     let expanded = layout.expand(&[7, 2, 4, 5]).unwrap();
-    assert_eq!(expanded.shape(), &[7, 2, 4, 5]);
-    assert_eq!(expanded.strides(), &[0, 1, 0, 0]);
+    assert_expanded_layout(&expanded, &layout, &[7, 2, 4, 5]);
 
     let layout = TensorLayout::from(&[1, 1, 2]);
     let expanded = layout.expand(&[4, 3, 2]).unwrap();
-    assert_eq!(expanded.shape(), &[4, 3, 2]);
-    assert_eq!(expanded.strides(), &[0, 0, 1]);
+    assert_expanded_layout(&expanded, &layout, &[4, 3, 2]);
 }
 
 #[test]
-fn test_broadcast_shape() {
-    let (t1, t2) = TensorLayout::from(&[1])
-        .broadcast(&TensorLayout::from(&[3]))
-        .unwrap();
-    assert_eq!(t1.shape(), &[3]);
-    assert_eq!(t1.strides(), &[0]);
-    assert_eq!(t2.shape(), &[3]);
-    assert_eq!(t2.strides(), &[1]);
+fn test_layout_broadcast() {
+    let t1 = TensorLayout::from(&[1]);
+    let t2 = TensorLayout::from(&[3]);
+    let (r1, r2) = t1.broadcast(&t2).unwrap();
+    assert_expanded_layout(&r1, &t1, &[3]);
+    assert_expanded_layout(&r2, &t2, &[3]);
 
-    let (t1, t2) = TensorLayout::from(&[3])
-        .broadcast(&TensorLayout::from(&[1]))
-        .unwrap();
-    assert_eq!(t1.shape(), &[3]);
-    assert_eq!(t1.strides(), &[1]);
-    assert_eq!(t2.shape(), &[3]);
-    assert_eq!(t2.strides(), &[0]);
+    let t1 = TensorLayout::from(&[3]);
+    let t2 = TensorLayout::from(&[1]);
+    let (r1, r2) = t1.broadcast(&t2).unwrap();
+    assert_expanded_layout(&r1, &t1, &[3]);
+    assert_expanded_layout(&r2, &t2, &[3]);
 
-    let (t1, t2) = TensorLayout::from(&[2, 3])
-        .broadcast(&TensorLayout::from(&[1]))
-        .unwrap();
-    assert_eq!(t1.shape(), &[2, 3]);
-    assert_eq!(t1.strides(), &[3, 1]);
-    assert_eq!(t2.shape(), &[2, 3]);
-    assert_eq!(t2.strides(), &[0, 0]);
+    let t1 = TensorLayout::from(&[2, 3]);
+    let t2 = TensorLayout::from(&[1]);
+    let (r1, r2) = t1.broadcast(&t2).unwrap();
+    assert_expanded_layout(&r1, &t1, &[2, 3]);
+    assert_expanded_layout(&r2, &t2, &[2, 3]);
 
-    let (t1, t2) = TensorLayout::from(&[1])
-        .broadcast(&TensorLayout::from(&[3, 2]))
-        .unwrap();
-    assert_eq!(t1.shape(), &[3, 2]);
-    assert_eq!(t1.strides(), &[0, 0]);
-    assert_eq!(t2.shape(), &[3, 2]);
-    assert_eq!(t2.strides(), &[2, 1]);
+    let t1 = TensorLayout::from(&[3, 2]);
+    let t2 = TensorLayout::from(&[1]);
+    let (r1, r2) = t1.broadcast(&t2).unwrap();
+    assert_expanded_layout(&r1, &t1, &[3, 2]);
+    assert_expanded_layout(&r2, &t2, &[3, 2]);
 
-    let (t1, t2) = TensorLayout::from(&[2, 1, 4])
-        .broadcast(&TensorLayout::from(&[7, 2, 4, 1]))
-        .unwrap();
-    assert_eq!(t1.shape(), &[7, 2, 4, 4]);
-    assert_eq!(t1.strides(), &[0, 4, 0, 1]);
-    assert_eq!(t2.shape(), &[7, 2, 4, 4]);
-    assert_eq!(t2.strides(), &[8, 4, 1, 0]);
+    let t1 = TensorLayout::from(&[2, 1, 4]);
+    let t2 = TensorLayout::from(&[7, 2, 4, 1]);
+    let (r1, r2) = t1.broadcast(&t2).unwrap();
+    assert_expanded_layout(&r1, &t1, &[7, 2, 4, 4]);
+    assert_expanded_layout(&r2, &t2, &[7, 2, 4, 4]);
 
-    let (t1, t2) = TensorLayout::from(&[1, 4, 1, 2])
-        .broadcast(&TensorLayout::from(&[1, 3, 1]))
-        .unwrap();
-    assert_eq!(t1.shape(), &[1, 4, 3, 2]);
-    assert_eq!(t1.strides(), &[8, 2, 0, 1]);
-    assert_eq!(t2.shape(), &[1, 4, 3, 2]);
-    assert_eq!(t2.strides(), &[0, 0, 1, 0]);
+    let t1 = TensorLayout::from(&[1, 4, 1, 2]);
+    let t2 = TensorLayout::from(&[1, 3, 1]);
+    let (r1, r2) = t1.broadcast(&t2).unwrap();
+    assert_expanded_layout(&r1, &t1, &[1, 4, 3, 2]);
+    assert_expanded_layout(&r2, &t2, &[1, 4, 3, 2]);
 }
 
 #[test]
@@ -218,24 +185,19 @@ fn test_layout_reshape() {
     let layout = TensorLayout::from(&[2, 3, 4]);
 
     let l = layout.reshape(&[6, 4]).unwrap().unwrap();
-    assert_eq!(l.shape(), &[6, 4]);
-    assert_eq!(l.strides(), &[4, 1]);
+    assert_contiguous_layout(&l, &[6, 4]);
 
     let l = layout.reshape(&[2, 12]).unwrap().unwrap();
-    assert_eq!(l.shape(), &[2, 12]);
-    assert_eq!(l.strides(), &[12, 1]);
+    assert_contiguous_layout(&l, &[2, 12]);
 
     let l = layout.reshape(&[1, 6, 4]).unwrap().unwrap();
-    assert_eq!(l.shape(), &[1, 6, 4]);
-    assert_eq!(l.strides(), &[24, 4, 1]);
+    assert_contiguous_layout(&l, &[1, 6, 4]);
 
     let l = layout.reshape(&[2, 6, 2]).unwrap().unwrap();
-    assert_eq!(l.shape(), &[2, 6, 2]);
-    assert_eq!(l.strides(), &[12, 2, 1]);
+    assert_contiguous_layout(&l, &[2, 6, 2]);
 
     let l = layout.reshape(&[2, 3, 2, 2]).unwrap().unwrap();
-    assert_eq!(l.shape(), &[2, 3, 2, 2]);
-    assert_eq!(l.strides(), &[12, 4, 2, 1]);
+    assert_contiguous_layout(&l, &[2, 3, 2, 2]);
 }
 
 #[test]
