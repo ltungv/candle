@@ -3,17 +3,19 @@
 pub mod error;
 pub mod layout;
 
-use std::sync::Arc;
+use std::rc::Rc;
 
 use self::{
     error::TensorError,
-    layout::{broadcast_shape, PositionIterator, TensorLayout},
+    layout::{PositionIterator, TensorLayout},
 };
 
-/// An N-dimension array.
+/// An N-dimension array holding elements row-major order. Tensors are immutable and new ones are
+/// created each time we perform an operation. Tensors' underlying data is shared using reference
+/// counting and only cloned when an operations can't be performed without modifying the data.
 #[derive(Debug)]
 pub struct Tensor {
-    data: Arc<Vec<f32>>,
+    data: Rc<Vec<f32>>,
     layout: TensorLayout,
 }
 
@@ -21,7 +23,7 @@ impl From<Vec<f32>> for Tensor {
     fn from(data: Vec<f32>) -> Self {
         let data_len = data.len();
         Self {
-            data: Arc::new(data),
+            data: Rc::new(data),
             layout: TensorLayout::from(&[data_len]),
         }
     }
@@ -42,7 +44,7 @@ impl<const N: usize> From<[f32; N]> for Tensor {
 impl<'a> IntoIterator for &'a Tensor {
     type Item = &'a f32;
 
-    type IntoIter = TensorIterator<'a>;
+    type IntoIter = TensorRowIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         Self::IntoIter {
@@ -62,7 +64,7 @@ impl Tensor {
             ));
         }
         Ok(Self {
-            data: Arc::new(data.to_vec()),
+            data: Rc::new(data.to_vec()),
             layout,
         })
     }
@@ -70,18 +72,6 @@ impl Tensor {
     /// Returns the layout of this tensor.
     pub fn layout(&self) -> &TensorLayout {
         &self.layout
-    }
-
-    /// Applies the binary function `op` to the two tensors, performing broadcast
-    /// when necessary.
-    pub fn broadcast<F>(&self, other: &Self, op: F) -> Result<Self, TensorError>
-    where
-        F: Fn(&f32, &f32) -> f32,
-    {
-        let broadcasted_shape = broadcast_shape(self.layout.shape(), other.layout.shape())?;
-        let lhs = self.expand(&broadcasted_shape)?;
-        let rhs = other.expand(&broadcasted_shape)?;
-        Ok(lhs.zip(&rhs, op))
     }
 
     /// Applies the unary function `op` to all elements in the tensor.
@@ -94,40 +84,48 @@ impl Tensor {
             res.push(op(x));
         }
         Self {
-            data: Arc::new(res),
+            data: Rc::new(res),
             layout: TensorLayout::from(self.layout.shape()),
         }
     }
 
-    /// Applies the unary function `op` to all elements in the tensor.
-    pub fn zip<F>(&self, other: &Self, op: F) -> Self
+    /// Applies the binary function `op` by pairing each element in `self` and `other` and applying
+    /// broadcast when necessary. See [NumPy's broadcasting] for more information.
+    ///
+    /// [NumPy's broadcasting]: https://numpy.org/doc/stable/user/basics.broadcasting.html
+    pub fn zip<F>(&self, other: &Self, op: F) -> Result<Self, TensorError>
     where
         F: Fn(&f32, &f32) -> f32,
     {
-        let mut res = Vec::with_capacity(self.layout.elems().min(other.layout.elems()));
-        for (x, y) in self.into_iter().zip(other.into_iter()) {
+        let (lhs, rhs) = self.broadcast(other)?;
+        let mut res = Vec::with_capacity(lhs.layout.elems());
+        for (x, y) in lhs.into_iter().zip(rhs.into_iter()) {
             res.push(op(x, y));
         }
-        Self {
-            data: Arc::new(res),
-            layout: TensorLayout::from(self.layout.shape()),
-        }
+        Ok(Self {
+            data: Rc::new(res),
+            layout: TensorLayout::from(lhs.layout.shape()),
+        })
     }
 
     /// Reduces all elements along the given axis into a single element using the given operation.
+    /// This effectively reduces the rank of the tensor by one. See [NumPy's reduce] for more
+    /// information.
+    ///
+    /// [NumPy's reduce]: https://numpy.org/doc/stable/reference/generated/numpy.ufunc.reduce.html#numpy-ufunc-reduce
     pub fn reduce<F>(&self, axis: &[usize], default: f32, op: F) -> Result<Self, TensorError>
     where
         F: Fn(&f32, &f32) -> f32,
     {
         let (layout, reducer) = self.layout.reduce(axis)?;
-        let mut reduced_data = vec![default; layout.elems()];
+        let mut res = vec![default; layout.elems()];
         for idx in self.layout.iter_index() {
-            let input_pos = self.layout.index_to_position(&idx);
-            let reduced_pos = reducer.index_to_position(&idx);
-            reduced_data[reduced_pos] = op(&reduced_data[reduced_pos], &self.data[input_pos]);
+            let src_pos = self.layout.index_to_position(&idx);
+            let dst_pos = reducer.index_to_position(&idx);
+            res[dst_pos] = op(&res[dst_pos], &self.data[src_pos]);
         }
         Ok(Self {
-            data: Arc::new(reduced_data),
+            data: Rc::new(res),
             layout,
         })
     }
@@ -141,7 +139,7 @@ impl Tensor {
         }
     }
 
-    /// Transposes the tensor without cloning its data.
+    /// Swaps 2 axis of the tensor without cloning its data.
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
         let layout = self.layout.transpose(dim0, dim1)?;
         Ok(Self {
@@ -150,7 +148,7 @@ impl Tensor {
         })
     }
 
-    /// Transposes the tensor without cloning its data.
+    /// Permutes the tensor axis according to the given axis ordering without cloning its data.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
         let layout = self.layout.permute(permutation)?;
         Ok(Self {
@@ -159,16 +157,8 @@ impl Tensor {
         })
     }
 
-    /// Expands the tensor to the given shape without cloning its data.
-    pub fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
-        let layout = self.layout.expand(shape)?;
-        Ok(Self {
-            data: self.data.clone(),
-            layout,
-        })
-    }
-
-    /// Reshapes the tensor to the given shape.
+    /// Reshapes the tensor to the given shape. This might clone the data if the new shape can't be
+    /// represented contiguously basing on the current layout.
     pub fn reshape(&self, shape: &[usize]) -> Result<Self, TensorError> {
         match self.layout.reshape(shape)? {
             Some(layout) => Ok(Self {
@@ -178,15 +168,30 @@ impl Tensor {
             None => Self::from(self.data.as_ref().clone()).reshape(shape),
         }
     }
+
+    /// Broadcast the tensors and returns their broadcasted versions. See [TensorLayout::broadcast]
+    /// for more details.
+    fn broadcast(&self, other: &Self) -> Result<(Self, Self), TensorError> {
+        let (lhs_layout, rhs_layout) = self.layout.broadcast(&other.layout)?;
+        let lhs = Self {
+            data: self.data.clone(),
+            layout: lhs_layout,
+        };
+        let rhs = Self {
+            data: self.data.clone(),
+            layout: rhs_layout,
+        };
+        Ok((lhs, rhs))
+    }
 }
 
-/// An iterator over a tensor.
-pub struct TensorIterator<'a> {
+/// A row-major iterator over a tensor.
+pub struct TensorRowIter<'a> {
     tensor: &'a Tensor,
     position_iterator: PositionIterator<'a>,
 }
 
-impl<'a> Iterator for TensorIterator<'a> {
+impl<'a> Iterator for TensorRowIter<'a> {
     type Item = &'a f32;
 
     fn next(&mut self) -> Option<Self::Item> {

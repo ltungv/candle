@@ -1,11 +1,66 @@
-use candle::tensor::layout::{broadcast_shape, TensorLayout};
+use candle::tensor::layout::TensorLayout;
 
 #[test]
 fn test_layout_create() {
+    let data = vec![2, 3, 4];
+    let assert_layout = |layout: &TensorLayout| {
+        assert_eq!(layout.elems(), 24);
+        assert_eq!(layout.shape(), &[2, 3, 4]);
+        assert_eq!(layout.strides(), &[12, 4, 1]);
+    };
+
+    let layout = TensorLayout::from(data.as_slice());
+    assert_layout(&layout);
+
+    let layout = TensorLayout::from(data);
+    assert_layout(&layout);
+
+    let layout = TensorLayout::from([2, 3, 4]);
+    assert_layout(&layout);
+
     let layout = TensorLayout::from(&[2, 3, 4]);
-    assert_eq!(layout.elems(), 24);
-    assert_eq!(layout.shape(), &[2, 3, 4]);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
+    assert_layout(&layout);
+}
+
+#[test]
+fn test_layout_reduce() {
+    let layout = TensorLayout::from(&[2, 3, 4]);
+
+    let (reduced, reducer) = layout.reduce(&[0]).unwrap();
+    assert_eq!(reduced.shape(), &[1, 3, 4]);
+    assert_eq!(reduced.strides(), &[12, 4, 1]);
+    assert_eq!(reducer.shape(), &[1, 3, 4]);
+    assert_eq!(reducer.strides(), &[0, 4, 1]);
+
+    let (reduced, reducer) = layout.reduce(&[1]).unwrap();
+    assert_eq!(reduced.shape(), &[2, 1, 4]);
+    assert_eq!(reduced.strides(), &[4, 4, 1]);
+    assert_eq!(reducer.shape(), &[2, 1, 4]);
+    assert_eq!(reducer.strides(), &[4, 0, 1]);
+
+    let (reduced, reducer) = layout.reduce(&[2]).unwrap();
+    assert_eq!(reduced.shape(), &[2, 3, 1]);
+    assert_eq!(reduced.strides(), &[3, 1, 1]);
+    assert_eq!(reducer.shape(), &[2, 3, 1]);
+    assert_eq!(reducer.strides(), &[3, 1, 0]);
+
+    let (reduced, reducer) = layout.reduce(&[0, 1]).unwrap();
+    assert_eq!(reduced.shape(), &[1, 1, 4]);
+    assert_eq!(reduced.strides(), &[4, 4, 1]);
+    assert_eq!(reducer.shape(), &[1, 1, 4]);
+    assert_eq!(reducer.strides(), &[0, 0, 1]);
+
+    let (reduced, reducer) = layout.reduce(&[0, 2]).unwrap();
+    assert_eq!(reduced.shape(), &[1, 3, 1]);
+    assert_eq!(reduced.strides(), &[3, 1, 1]);
+    assert_eq!(reducer.shape(), &[1, 3, 1]);
+    assert_eq!(reducer.strides(), &[0, 1, 0]);
+
+    let (reduced, reducer) = layout.reduce(&[0, 1, 2]).unwrap();
+    assert_eq!(reduced.shape(), &[1, 1, 1]);
+    assert_eq!(reduced.strides(), &[1, 1, 1]);
+    assert_eq!(reducer.shape(), &[1, 1, 1]);
+    assert_eq!(reducer.strides(), &[0, 0, 0]);
 }
 
 #[test]
@@ -108,44 +163,54 @@ fn test_layout_expand() {
 }
 
 #[test]
-fn test_layout_reduce() {
-    let layout = TensorLayout::from(&[2, 3, 4]);
+fn test_broadcast_shape() {
+    let (t1, t2) = TensorLayout::from(&[1])
+        .broadcast(&TensorLayout::from(&[3]))
+        .unwrap();
+    assert_eq!(t1.shape(), &[3]);
+    assert_eq!(t1.strides(), &[0]);
+    assert_eq!(t2.shape(), &[3]);
+    assert_eq!(t2.strides(), &[1]);
 
-    let (reduced, reducer) = layout.reduce(&[0]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 3, 4]);
-    assert_eq!(reduced.strides(), &[12, 4, 1]);
-    assert_eq!(reducer.shape(), &[1, 3, 4]);
-    assert_eq!(reducer.strides(), &[0, 4, 1]);
+    let (t1, t2) = TensorLayout::from(&[3])
+        .broadcast(&TensorLayout::from(&[1]))
+        .unwrap();
+    assert_eq!(t1.shape(), &[3]);
+    assert_eq!(t1.strides(), &[1]);
+    assert_eq!(t2.shape(), &[3]);
+    assert_eq!(t2.strides(), &[0]);
 
-    let (reduced, reducer) = layout.reduce(&[1]).unwrap();
-    assert_eq!(reduced.shape(), &[2, 1, 4]);
-    assert_eq!(reduced.strides(), &[4, 4, 1]);
-    assert_eq!(reducer.shape(), &[2, 1, 4]);
-    assert_eq!(reducer.strides(), &[4, 0, 1]);
+    let (t1, t2) = TensorLayout::from(&[2, 3])
+        .broadcast(&TensorLayout::from(&[1]))
+        .unwrap();
+    assert_eq!(t1.shape(), &[2, 3]);
+    assert_eq!(t1.strides(), &[3, 1]);
+    assert_eq!(t2.shape(), &[2, 3]);
+    assert_eq!(t2.strides(), &[0, 0]);
 
-    let (reduced, reducer) = layout.reduce(&[2]).unwrap();
-    assert_eq!(reduced.shape(), &[2, 3, 1]);
-    assert_eq!(reduced.strides(), &[3, 1, 1]);
-    assert_eq!(reducer.shape(), &[2, 3, 1]);
-    assert_eq!(reducer.strides(), &[3, 1, 0]);
+    let (t1, t2) = TensorLayout::from(&[1])
+        .broadcast(&TensorLayout::from(&[3, 2]))
+        .unwrap();
+    assert_eq!(t1.shape(), &[3, 2]);
+    assert_eq!(t1.strides(), &[0, 0]);
+    assert_eq!(t2.shape(), &[3, 2]);
+    assert_eq!(t2.strides(), &[2, 1]);
 
-    let (reduced, reducer) = layout.reduce(&[0, 1]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 1, 4]);
-    assert_eq!(reduced.strides(), &[4, 4, 1]);
-    assert_eq!(reducer.shape(), &[1, 1, 4]);
-    assert_eq!(reducer.strides(), &[0, 0, 1]);
+    let (t1, t2) = TensorLayout::from(&[2, 1, 4])
+        .broadcast(&TensorLayout::from(&[7, 2, 4, 1]))
+        .unwrap();
+    assert_eq!(t1.shape(), &[7, 2, 4, 4]);
+    assert_eq!(t1.strides(), &[0, 4, 0, 1]);
+    assert_eq!(t2.shape(), &[7, 2, 4, 4]);
+    assert_eq!(t2.strides(), &[8, 4, 1, 0]);
 
-    let (reduced, reducer) = layout.reduce(&[0, 2]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 3, 1]);
-    assert_eq!(reduced.strides(), &[3, 1, 1]);
-    assert_eq!(reducer.shape(), &[1, 3, 1]);
-    assert_eq!(reducer.strides(), &[0, 1, 0]);
-
-    let (reduced, reducer) = layout.reduce(&[0, 1, 2]).unwrap();
-    assert_eq!(reduced.shape(), &[1, 1, 1]);
-    assert_eq!(reduced.strides(), &[1, 1, 1]);
-    assert_eq!(reducer.shape(), &[1, 1, 1]);
-    assert_eq!(reducer.strides(), &[0, 0, 0]);
+    let (t1, t2) = TensorLayout::from(&[1, 4, 1, 2])
+        .broadcast(&TensorLayout::from(&[1, 3, 1]))
+        .unwrap();
+    assert_eq!(t1.shape(), &[1, 4, 3, 2]);
+    assert_eq!(t1.strides(), &[8, 2, 0, 1]);
+    assert_eq!(t2.shape(), &[1, 4, 3, 2]);
+    assert_eq!(t2.strides(), &[0, 0, 1, 0]);
 }
 
 #[test]
@@ -195,27 +260,6 @@ fn test_layout_position_to_index() {
         let idx = layout.position_to_index(pos);
         assert_eq!(idx.as_slice(), exp.as_slice());
     }
-}
-
-#[test]
-fn test_broadcast_shape() {
-    let s = broadcast_shape(&[1], &[3]).unwrap();
-    assert_eq!(s, &[3]);
-
-    let s = broadcast_shape(&[3], &[1]).unwrap();
-    assert_eq!(s, &[3]);
-
-    let s = broadcast_shape(&[2, 3], &[1]).unwrap();
-    assert_eq!(s, &[2, 3]);
-
-    let s = broadcast_shape(&[1], &[3, 2]).unwrap();
-    assert_eq!(s, &[3, 2]);
-
-    let s = broadcast_shape(&[2, 1, 4], &[7, 2, 4, 1]).unwrap();
-    assert_eq!(s, &[7, 2, 4, 4]);
-
-    let s = broadcast_shape(&[1, 4, 1, 2], &[1, 3, 1]).unwrap();
-    assert_eq!(s, &[1, 4, 3, 2]);
 }
 
 #[test]

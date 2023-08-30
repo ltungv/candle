@@ -26,14 +26,20 @@ impl From<Vec<usize>> for TensorLayout {
     }
 }
 
-impl From<&[usize]> for TensorLayout {
-    fn from(shape: &[usize]) -> Self {
+impl<const N: usize> From<[usize; N]> for TensorLayout {
+    fn from(shape: [usize; N]) -> Self {
         TensorLayout::from(shape.to_vec())
     }
 }
 
 impl<const N: usize> From<&[usize; N]> for TensorLayout {
     fn from(shape: &[usize; N]) -> Self {
+        TensorLayout::from(shape.to_vec())
+    }
+}
+
+impl From<&[usize]> for TensorLayout {
+    fn from(shape: &[usize]) -> Self {
         TensorLayout::from(shape.to_vec())
     }
 }
@@ -126,7 +132,8 @@ impl TensorLayout {
         Ok(Self { shape, strides })
     }
 
-    /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
+    /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size. See
+    /// [broadcasting rule] for more details.
     ///
     /// Tensor can be also expanded to a larger number of dimensions, and the new ones will be
     /// appended at the front. For the new dimensions, the size cannot be set to -1.
@@ -135,6 +142,8 @@ impl TensorLayout {
     /// existing existing tensor where a dimension of size one is expanded to a larger size by
     /// setting the stride to 0. Any dimension of size 1 can be expanded to an arbitrary value
     /// without allocating new memory.
+    ///
+    /// [broadcasting rule]: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
     pub fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
         let new_shape = shape.to_vec();
         let mut new_strides = vec![0; shape.len()];
@@ -156,6 +165,38 @@ impl TensorLayout {
             shape: new_shape,
             strides: new_strides,
         })
+    }
+
+    /// Performs broadcasting on the 2 layouts and returns their broadcasted versions.
+    pub fn broadcast(&self, other: &Self) -> Result<(Self, Self), TensorError> {
+        let (small, large) = if self.shape.len() < other.shape.len() {
+            (self.shape(), other.shape())
+        } else {
+            (other.shape(), self.shape())
+        };
+        let mut broadcasted_shape = Vec::with_capacity(large.len());
+        for sizes in small
+            .iter()
+            .rev()
+            .chain(iter::once(&1usize).cycle())
+            .zip(large.iter().rev())
+        {
+            match sizes {
+                (1, d) => broadcasted_shape.push(*d),
+                (d, 1) => broadcasted_shape.push(*d),
+                (dx, dy) if dx == dy => broadcasted_shape.push(*dx),
+                _ => {
+                    return Err(TensorError::IncompatibleShapes(
+                        small.to_vec(),
+                        large.to_vec(),
+                    ))
+                }
+            }
+        }
+        broadcasted_shape.reverse();
+        let lhs = self.expand(broadcasted_shape.as_slice())?;
+        let rhs = other.expand(broadcasted_shape.as_slice())?;
+        Ok((lhs, rhs))
     }
 
     /// Returns a new layout for a tensor having the same number of elements
@@ -248,31 +289,6 @@ impl TensorLayout {
     pub fn iter_position(&self) -> PositionIterator<'_> {
         PositionIterator::from(self)
     }
-}
-
-/// Returns the shape of a broadcast between this layout and another shape.
-pub fn broadcast_shape(lhs: &[usize], rhs: &[usize]) -> Result<Vec<usize>, TensorError> {
-    let (small, large) = if lhs.len() < rhs.len() {
-        (lhs, rhs)
-    } else {
-        (rhs, lhs)
-    };
-    let mut new_shape = Vec::with_capacity(large.len());
-    for sizes in small
-        .iter()
-        .rev()
-        .chain(iter::once(&1usize).cycle())
-        .zip(large.iter().rev())
-    {
-        match sizes {
-            (1, d) => new_shape.push(*d),
-            (d, 1) => new_shape.push(*d),
-            (dx, dy) if dx == dy => new_shape.push(*dx),
-            _ => return Err(TensorError::IncompatibleShapes(lhs.to_vec(), rhs.to_vec())),
-        }
-    }
-    new_shape.reverse();
-    Ok(new_shape)
 }
 
 /// An iterator over a tensor's indices.

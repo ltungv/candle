@@ -9,7 +9,7 @@ fn main() {
     println!("T2 Shape: {:?}", t2.layout().shape());
     println!("T2 Strides: {:?}", t2.layout().strides());
 
-    let t3 = t1.broadcast(&t2, |x, y| x + y).unwrap();
+    let t3 = t1.zip(&t2, |x, y| x + y).unwrap();
     println!("T3 Shape: {:?}", t3.layout().shape());
     println!("T3 Strides: {:?}", t3.layout().strides());
     for x in &t3 {
