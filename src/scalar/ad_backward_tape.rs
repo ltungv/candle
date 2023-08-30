@@ -10,7 +10,7 @@ use std::{
 use rand::{seq::SliceRandom, Rng};
 use rand_distr::Distribution;
 
-use crate::Sample;
+use crate::dataset::Sample;
 
 /// A node in the computation graph holding the index of the nodes it depends on and the gradients
 /// of the output with respect to each of the input.

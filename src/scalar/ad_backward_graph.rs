@@ -13,7 +13,7 @@ use std::{
 use rand::{seq::SliceRandom, Rng};
 use rand_distr::Distribution;
 
-use crate::Sample;
+use crate::dataset::Sample;
 
 #[derive(Debug, Clone)]
 struct Call {

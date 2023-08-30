@@ -2,7 +2,7 @@ use candle::tensor::layout::TensorLayout;
 
 #[test]
 fn test_layout_create() {
-    let data = vec![2, 3, 4];
+    let data = [2, 3, 4];
     let assert_layout = |layout: &TensorLayout| {
         assert_eq!(layout.elems(), 24);
         assert_eq!(layout.shape(), &[2, 3, 4]);
@@ -12,13 +12,13 @@ fn test_layout_create() {
     let layout = TensorLayout::from(data.as_slice());
     assert_layout(&layout);
 
+    let layout = TensorLayout::from(data.to_vec());
+    assert_layout(&layout);
+
+    let layout = TensorLayout::from(&data);
+    assert_layout(&layout);
+
     let layout = TensorLayout::from(data);
-    assert_layout(&layout);
-
-    let layout = TensorLayout::from([2, 3, 4]);
-    assert_layout(&layout);
-
-    let layout = TensorLayout::from(&[2, 3, 4]);
     assert_layout(&layout);
 }
 

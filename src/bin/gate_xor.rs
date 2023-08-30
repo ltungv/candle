@@ -1,6 +1,6 @@
 use candle::{
-    autodiff::{reverse_graph, reverse_tape},
-    Sample,
+    dataset::Sample,
+    scalar::{ad_backward_graph, ad_backward_tape},
 };
 use rand_distr::StandardNormal;
 
@@ -26,21 +26,21 @@ fn main() {
         },
     ];
     {
-        let tape = reverse_tape::Tape::default();
-        let mut mlp = reverse_tape::Mlp::new(vec![
-            reverse_tape::Layer::rand(
+        let tape = ad_backward_tape::Tape::default();
+        let mut mlp = ad_backward_tape::Mlp::new(vec![
+            ad_backward_tape::Layer::rand(
                 &tape,
                 &mut rng,
                 distribution,
-                reverse_tape::Var::sigmoid,
+                ad_backward_tape::Var::sigmoid,
                 2,
                 3,
             ),
-            reverse_tape::Layer::rand(
+            ad_backward_tape::Layer::rand(
                 &tape,
                 &mut rng,
                 distribution,
-                reverse_tape::Var::sigmoid,
+                ad_backward_tape::Var::sigmoid,
                 3,
                 1,
             ),
@@ -56,14 +56,26 @@ fn main() {
         }
     }
     {
-        let mlp = reverse_graph::Mlp::new(vec![
-            reverse_graph::Layer::rand(&mut rng, &distribution, reverse_graph::Var::sigmoid, 2, 3),
-            reverse_graph::Layer::rand(&mut rng, &distribution, reverse_graph::Var::sigmoid, 3, 1),
+        let mlp = ad_backward_graph::Mlp::new(vec![
+            ad_backward_graph::Layer::rand(
+                &mut rng,
+                &distribution,
+                ad_backward_graph::Var::sigmoid,
+                2,
+                3,
+            ),
+            ad_backward_graph::Layer::rand(
+                &mut rng,
+                &distribution,
+                ad_backward_graph::Var::sigmoid,
+                3,
+                1,
+            ),
         ]);
         mlp.train(&mut rng, &dataset, 100000, 4, 0.1, 20000);
         for sample in &dataset {
-            let x1 = reverse_graph::Var::new(sample.input[0]);
-            let x2 = reverse_graph::Var::new(sample.input[1]);
+            let x1 = ad_backward_graph::Var::new(sample.input[0]);
+            let x2 = ad_backward_graph::Var::new(sample.input[1]);
             let z = mlp.forward(&[x1, x2]);
             println!("pred: {}", z[0].value());
             println!("real: {}", sample.output[0]);
