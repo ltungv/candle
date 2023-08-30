@@ -29,14 +29,20 @@ impl From<Vec<f32>> for Tensor {
     }
 }
 
-impl From<&[f32]> for Tensor {
-    fn from(data: &[f32]) -> Self {
+impl<const N: usize> From<[f32; N]> for Tensor {
+    fn from(data: [f32; N]) -> Self {
         Tensor::from(data.to_vec())
     }
 }
 
-impl<const N: usize> From<[f32; N]> for Tensor {
-    fn from(data: [f32; N]) -> Self {
+impl<const N: usize> From<&[f32; N]> for Tensor {
+    fn from(data: &[f32; N]) -> Self {
+        Tensor::from(data.to_vec())
+    }
+}
+
+impl From<&[f32]> for Tensor {
+    fn from(data: &[f32]) -> Self {
         Tensor::from(data.to_vec())
     }
 }
