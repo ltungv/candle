@@ -7,6 +7,6 @@ fn main() {
     let z = x.matmul(&w) + &b;
     println!("{:?}", z.unwrap());
 
-    let z = (&w * &b).and_then(|x| x + &w * &b);
+    let z = (&w * &b).and_then(|x| &x + &w * &b);
     println!("{:?}", z.unwrap());
 }

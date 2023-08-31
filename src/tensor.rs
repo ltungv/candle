@@ -49,30 +49,6 @@ impl ops::Add<Result<Tensor, TensorError>> for &Tensor {
     }
 }
 
-impl ops::Add for Tensor {
-    type Output = Result<Tensor, TensorError>;
-
-    fn add(self, rhs: Tensor) -> Self::Output {
-        &self + &rhs
-    }
-}
-
-impl ops::Add<&Tensor> for Tensor {
-    type Output = Result<Tensor, TensorError>;
-
-    fn add(self, rhs: &Tensor) -> Self::Output {
-        &self + rhs
-    }
-}
-
-impl ops::Add<Result<Tensor, TensorError>> for Tensor {
-    type Output = Result<Tensor, TensorError>;
-
-    fn add(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
-        rhs.and_then(|rhs| &self + &rhs)
-    }
-}
-
 impl ops::Add<&Tensor> for Result<Tensor, TensorError> {
     type Output = Result<Tensor, TensorError>;
 
@@ -102,30 +78,6 @@ impl ops::Mul<Result<Tensor, TensorError>> for &Tensor {
 
     fn mul(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
         rhs.and_then(|rhs| self * &rhs)
-    }
-}
-
-impl ops::Mul for Tensor {
-    type Output = Result<Tensor, TensorError>;
-
-    fn mul(self, rhs: Tensor) -> Self::Output {
-        &self * &rhs
-    }
-}
-
-impl ops::Mul<&Tensor> for Tensor {
-    type Output = Result<Tensor, TensorError>;
-
-    fn mul(self, rhs: &Tensor) -> Self::Output {
-        &self * rhs
-    }
-}
-
-impl ops::Mul<Result<Tensor, TensorError>> for Tensor {
-    type Output = Result<Tensor, TensorError>;
-
-    fn mul(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
-        rhs.and_then(|rhs| &self * &rhs)
     }
 }
 
@@ -303,7 +255,7 @@ impl Tensor {
         let lhs = self.reshape(&lhs_shape)?;
         let rhs = other.reshape(&rhs_shape)?;
         // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
-        let prod = (lhs * rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2))?;
+        let prod = (&lhs * rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2))?;
         // Sum the last dimension to get (..., m, n, 1)
         let sumprod = prod.sum(&[prod.layout.shape().len() - 1])?;
         // Remove last dimension
