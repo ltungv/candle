@@ -5,7 +5,7 @@ pub mod layout;
 
 use std::{
     ops::{self, Index},
-    rc::Rc,
+    sync::Arc,
 };
 
 use rand::Rng;
@@ -21,7 +21,7 @@ use self::{
 /// counting and only cloned when an operations can't be performed without modifying the data.
 #[derive(Debug)]
 pub struct Tensor {
-    data: Rc<Vec<f32>>,
+    data: Arc<Vec<f32>>,
     layout: TensorLayout,
 }
 
@@ -93,7 +93,7 @@ impl From<Vec<f32>> for Tensor {
     fn from(data: Vec<f32>) -> Self {
         let data_len = data.len();
         Self {
-            data: Rc::new(data),
+            data: Arc::new(data),
             layout: TensorLayout::from(&[data_len]),
         }
     }
@@ -175,7 +175,7 @@ impl Tensor {
     /// Creates a new tensor holding a scalar.
     pub fn scalar(x: f32) -> Self {
         Self {
-            data: Rc::new(vec![x]),
+            data: Arc::new(vec![x]),
             layout: TensorLayout::scalar(),
         }
     }
@@ -190,7 +190,7 @@ impl Tensor {
             ));
         }
         Ok(Self {
-            data: Rc::new(data.to_vec()),
+            data: Arc::new(data.to_vec()),
             layout,
         })
     }
@@ -204,7 +204,7 @@ impl Tensor {
         let layout = TensorLayout::from(shape);
         let data = rng.sample_iter(distribution).take(layout.elems()).collect();
         Self {
-            data: Rc::new(data),
+            data: Arc::new(data),
             layout,
         }
     }
@@ -252,9 +252,9 @@ impl Tensor {
         lhs_shape.insert(lhs_shape.len() - 1, 1);
         // Turn (..., k, n) into (..., 1, k, n);
         rhs_shape.insert(rhs_shape.len() - 2, 1);
+        // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
         let lhs = self.reshape(&lhs_shape)?;
         let rhs = other.reshape(&rhs_shape)?;
-        // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
         let prod = (&lhs * rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2))?;
         // Sum the last dimension to get (..., m, n, 1)
         let sumprod = prod.sum(&[prod.layout.shape().len() - 1])?;
@@ -294,7 +294,7 @@ impl Tensor {
             res.push(op(x));
         }
         Self {
-            data: Rc::new(res),
+            data: Arc::new(res),
             layout: TensorLayout::from(self.layout.shape()),
         }
     }
@@ -313,7 +313,7 @@ impl Tensor {
             res.push(op(x, y));
         }
         Ok(Self {
-            data: Rc::new(res),
+            data: Arc::new(res),
             layout: TensorLayout::from(lhs.layout.shape()),
         })
     }
@@ -335,7 +335,7 @@ impl Tensor {
             res[dst_pos] = op(&res[dst_pos], &self.data[src_pos]);
         }
         Ok(Self {
-            data: Rc::new(res),
+            data: Arc::new(res),
             layout,
         })
     }
