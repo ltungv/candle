@@ -280,7 +280,7 @@ impl Tensor {
     }
 
     /// Returns a new tensor reduced along the given dimensions by multiplying all elements.
-    pub fn product(&self, dims: &[usize]) -> Result<Tensor, TensorError> {
+    pub fn prod(&self, dims: &[usize]) -> Result<Tensor, TensorError> {
         self.reduce(dims, 1.0, |x, y| x * y)
     }
 

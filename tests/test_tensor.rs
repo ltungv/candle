@@ -39,6 +39,146 @@ fn test_tensor_create() {
 }
 
 #[test]
+fn test_tensor_add() {
+    let add = |x: &f32, y: &f32| x + y;
+    let mut rng = rand::thread_rng();
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[1]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[1]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 3]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 3]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[4]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 1, 4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 1, 4]);
+    let res = (&t1 + &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, add);
+}
+
+#[test]
+fn test_tensor_mul() {
+    let mul = |x: &f32, y: &f32| x * y;
+    let mut rng = rand::thread_rng();
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[1]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[1]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 3]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 3]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[3]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[4]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 1, 4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+
+    let t1 = Tensor::rand(&mut rng, StandardNormal, &[2, 3, 4]);
+    let t2 = Tensor::rand(&mut rng, StandardNormal, &[2, 1, 4]);
+    let res = (&t1 * &t2).unwrap();
+    assert_zipped_tensor(&res, &t1, &t2, mul);
+}
+
+#[test]
+fn test_tensor_sum() {
+    let t = Tensor::shaped(
+        &[2, 2, 2],
+        (0..8).map(|x| x as f32).collect::<Vec<_>>().as_slice(),
+    )
+    .unwrap();
+    let t1 = t.sum(&[0]).unwrap();
+    let t2 = t.sum(&[1]).unwrap();
+    let t3 = t.sum(&[2]).unwrap();
+    let t4 = t.sum(&[0, 1]).unwrap();
+    let t5 = t.sum(&[0, 2]).unwrap();
+    let t6 = t.sum(&[1, 2]).unwrap();
+    let t7 = t.sum(&[0, 1, 2]).unwrap();
+
+    assert_contiguous_tensor(&t1, &[4.0, 6.0, 8.0, 10.0], &[1, 2, 2]);
+    assert_contiguous_tensor(&t2, &[2.0, 4.0, 10.0, 12.0], &[2, 1, 2]);
+    assert_contiguous_tensor(&t3, &[1.0, 5.0, 9.0, 13.0], &[2, 2, 1]);
+    assert_contiguous_tensor(&t4, &[12.0, 16.0], &[1, 1, 2]);
+    assert_contiguous_tensor(&t5, &[10.0, 18.0], &[1, 2, 1]);
+    assert_contiguous_tensor(&t6, &[6.0, 22.0], &[2, 1, 1]);
+    assert_contiguous_tensor(&t7, &[28.0], &[1, 1, 1]);
+}
+
+#[test]
+fn test_tensor_prod() {
+    let t = Tensor::shaped(
+        &[2, 2, 2],
+        (1..9).map(|x| x as f32).collect::<Vec<_>>().as_slice(),
+    )
+    .unwrap();
+    let t1 = t.prod(&[0]).unwrap();
+    let t2 = t.prod(&[1]).unwrap();
+    let t3 = t.prod(&[2]).unwrap();
+    let t4 = t.prod(&[0, 1]).unwrap();
+    let t5 = t.prod(&[0, 2]).unwrap();
+    let t6 = t.prod(&[1, 2]).unwrap();
+    let t7 = t.prod(&[0, 1, 2]).unwrap();
+
+    assert_contiguous_tensor(&t1, &[5.0, 12.0, 21.0, 32.0], &[1, 2, 2]);
+    assert_contiguous_tensor(&t2, &[3.0, 8.0, 35.0, 48.0], &[2, 1, 2]);
+    assert_contiguous_tensor(&t3, &[2.0, 12.0, 30.0, 56.0], &[2, 2, 1]);
+    assert_contiguous_tensor(&t4, &[105.0, 384.0], &[1, 1, 2]);
+    assert_contiguous_tensor(&t5, &[60.0, 672.0], &[1, 2, 1]);
+    assert_contiguous_tensor(&t6, &[24.0, 1680.0], &[2, 1, 1]);
+    assert_contiguous_tensor(&t7, &[40320.0], &[1, 1, 1]);
+}
+
+#[test]
 fn test_tensor_map() {
     let mut rng = rand::thread_rng();
 
