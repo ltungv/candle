@@ -3,7 +3,10 @@
 pub mod error;
 pub mod layout;
 
-use std::{ops::Index, rc::Rc};
+use std::{
+    ops::{self, Index},
+    rc::Rc,
+};
 
 use rand::Rng;
 use rand_distr::Distribution;
@@ -20,6 +23,118 @@ use self::{
 pub struct Tensor {
     data: Rc<Vec<f32>>,
     layout: TensorLayout,
+}
+
+impl ops::Add for &Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn add(self, rhs: &Tensor) -> Self::Output {
+        self.zip(rhs, |x, y| x + y)
+    }
+}
+
+impl ops::Add<Tensor> for &Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn add(self, rhs: Tensor) -> Self::Output {
+        self + &rhs
+    }
+}
+
+impl ops::Add<Result<Tensor, TensorError>> for &Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn add(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
+        rhs.and_then(|rhs| self + &rhs)
+    }
+}
+
+impl ops::Add for Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn add(self, rhs: Tensor) -> Self::Output {
+        &self + &rhs
+    }
+}
+
+impl ops::Add<&Tensor> for Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn add(self, rhs: &Tensor) -> Self::Output {
+        &self + rhs
+    }
+}
+
+impl ops::Add<Result<Tensor, TensorError>> for Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn add(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
+        rhs.and_then(|rhs| &self + &rhs)
+    }
+}
+
+impl ops::Add<&Tensor> for Result<Tensor, TensorError> {
+    type Output = Result<Tensor, TensorError>;
+
+    fn add(self, rhs: &Tensor) -> Self::Output {
+        self.and_then(|lhs| &lhs + rhs)
+    }
+}
+
+impl ops::Mul for &Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn mul(self, rhs: &Tensor) -> Self::Output {
+        self.zip(rhs, |x, y| x * y)
+    }
+}
+
+impl ops::Mul<Tensor> for &Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn mul(self, rhs: Tensor) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl ops::Mul<Result<Tensor, TensorError>> for &Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn mul(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
+        rhs.and_then(|rhs| self * &rhs)
+    }
+}
+
+impl ops::Mul for Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn mul(self, rhs: Tensor) -> Self::Output {
+        &self * &rhs
+    }
+}
+
+impl ops::Mul<&Tensor> for Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn mul(self, rhs: &Tensor) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl ops::Mul<Result<Tensor, TensorError>> for Tensor {
+    type Output = Result<Tensor, TensorError>;
+
+    fn mul(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
+        rhs.and_then(|rhs| &self * &rhs)
+    }
+}
+
+impl ops::Mul<&Tensor> for Result<Tensor, TensorError> {
+    type Output = Result<Tensor, TensorError>;
+
+    fn mul(self, rhs: &Tensor) -> Self::Output {
+        self.and_then(|lhs| lhs.zip(rhs, |x, y| x * y))
+    }
 }
 
 impl From<Vec<f32>> for Tensor {
@@ -188,12 +303,9 @@ impl Tensor {
         let lhs = self.reshape(&lhs_shape)?;
         let rhs = other.reshape(&rhs_shape)?;
         // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
-        let prod = lhs.zip(
-            &rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2)?,
-            |x, y| x * y,
-        )?;
+        let prod = (lhs * rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2))?;
         // Sum the last dimension to get (..., m, n, 1)
-        let sumprod = prod.reduce(&[prod.layout.shape().len() - 1], 0.0, |x, y| x + y)?;
+        let sumprod = prod.sum(&[prod.layout.shape().len() - 1])?;
         // Remove last dimension
         let mut shape = {
             let s = sumprod.layout.shape();
@@ -208,6 +320,16 @@ impl Tensor {
             shape.remove(shape.len() - 1);
         }
         sumprod.reshape(&shape)
+    }
+
+    /// Returns a new tensor reduced along the given dimensions by summing all elements.
+    pub fn sum(&self, dims: &[usize]) -> Result<Tensor, TensorError> {
+        self.reduce(dims, 0.0, |x, y| x + y)
+    }
+
+    /// Returns a new tensor reduced along the given dimensions by multiplying all elements.
+    pub fn product(&self, dims: &[usize]) -> Result<Tensor, TensorError> {
+        self.reduce(dims, 1.0, |x, y| x * y)
     }
 
     /// Applies the unary function `op` to all elements in the tensor.
