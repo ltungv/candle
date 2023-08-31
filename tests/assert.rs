@@ -13,12 +13,12 @@ pub fn assert_scalar_layout(layout: &TensorLayout) {
 pub fn assert_reduced_layout(
     reduced: &TensorLayout,
     reducer: &TensorLayout,
-    axis: &[usize],
+    dims: &[usize],
     shape: &[usize],
 ) {
     assert_contiguous_layout(reduced, shape);
     let mut strides = reduced.strides().to_vec();
-    for d in axis {
+    for d in dims {
         strides[*d] = 0;
     }
     assert_eq!(reducer.shape(), shape);

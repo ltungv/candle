@@ -45,7 +45,7 @@ impl From<&[usize]> for TensorLayout {
 }
 
 impl TensorLayout {
-    /// Returns the shape for a scalar.
+    /// Returns the layout for a scalar, which has no shape and strides.
     pub fn scalar() -> Self {
         Self {
             shape: Vec::new(),
@@ -71,20 +71,22 @@ impl TensorLayout {
     /// Returns 2 layouts where the first is the layout of the reduced tensor and the second is the
     /// reducer layout. The reducer layout is used to map an index in the input tensor to a memory
     /// position in the reduced tensor.
-    pub fn reduce(&self, axis: &[usize]) -> Result<(Self, Self), TensorError> {
+    pub fn reduce(&self, dims: &[usize]) -> Result<(Self, Self), TensorError> {
         let mut reduced_shape = self.shape.clone();
-        for &d in axis {
+        for &d in dims {
             if d >= reduced_shape.len() {
-                return Err(TensorError::UnknownAxis(d));
+                // Reduced along an out-of-bounds dim.
+                return Err(TensorError::UnknownDimension(d));
             }
             reduced_shape[d] = 1;
         }
         let reduced_layout = Self::from(reduced_shape);
         let mut reducer_layout = reduced_layout.clone();
-        for &d in axis {
+        for &d in dims {
             // The reducer layout is similar to the reduced layout, except that the strides of the reduced
             // dimensions are set to 0. By setting the stride of the reduced dimension to 0, we can map
-            // multiple elements within the input dimension to the same element in the reduced dimension.
+            // multiple elements along the reduced dimension within the input tensor to the same element
+            // in the reduced tensor.
             reducer_layout.strides[d] = 0;
         }
         Ok((reduced_layout, reducer_layout))
@@ -104,37 +106,37 @@ impl TensorLayout {
     }
 
     /// Returns a new layout where the 2 dimensions are transposed.
-    pub fn transpose(&self, axis0: usize, axis1: usize) -> Result<Self, TensorError> {
-        if axis0 >= self.shape.len() {
-            return Err(TensorError::UnknownAxis(axis0));
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
+        if dim0 >= self.shape.len() {
+            return Err(TensorError::UnknownDimension(dim0));
         }
-        if axis1 >= self.shape.len() {
-            return Err(TensorError::UnknownAxis(axis1));
+        if dim1 >= self.shape.len() {
+            return Err(TensorError::UnknownDimension(dim1));
         }
         let mut shape = self.shape.clone();
         let mut strides = self.strides.clone();
-        shape.swap(axis0, axis1);
-        strides.swap(axis0, axis1);
+        shape.swap(dim0, dim1);
+        strides.swap(dim0, dim1);
         Ok(Self { shape, strides })
     }
 
     /// Returns a new layout where the dimensions are permuted.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
-        let mut sum_axis = 0;
+        let mut sum_dim = 0;
         let mut shape = Vec::with_capacity(self.shape.len());
         let mut strides = Vec::with_capacity(self.strides.len());
         for &d in permutation {
             if d >= self.shape.len() {
-                return Err(TensorError::UnknownAxis(d));
+                return Err(TensorError::UnknownDimension(d));
             }
-            sum_axis += d;
+            sum_dim += d;
             shape.push(self.shape[d]);
             strides.push(self.strides[d]);
         }
-        let num_axis = permutation.len();
-        if num_axis * (num_axis - 1) / 2 != sum_axis {
+        let num_dims = permutation.len();
+        if num_dims * (num_dims - 1) / 2 != sum_dim {
             return Err(TensorError::Custom(
-                "Each axis must be specified exactly once.".to_string(),
+                "Each dimension must be specified exactly once.".to_string(),
             ));
         }
         Ok(Self { shape, strides })
@@ -152,12 +154,11 @@ impl TensorLayout {
     /// without allocating new memory.
     ///
     /// [broadcasting rule]: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
-    pub fn expand(&self, shape: &[usize]) -> Result<Self, TensorError> {
-        let new_shape = shape.to_vec();
-        let mut new_strides = vec![0; shape.len()];
-        let new_axis = new_shape.iter().zip(new_strides.iter_mut()).rev();
-        let old_axis = self.shape.iter().zip(self.strides.iter()).rev();
-        for ((new_size, new_stride), (old_size, old_stride)) in new_axis.zip(old_axis) {
+    pub fn expand(&self, new_shape: &[usize]) -> Result<Self, TensorError> {
+        let mut new_strides = vec![0; new_shape.len()];
+        let new_dim = new_shape.iter().zip(new_strides.iter_mut()).rev();
+        let old_dim = self.shape.iter().zip(self.strides.iter()).rev();
+        for ((new_size, new_stride), (old_size, old_stride)) in new_dim.zip(old_dim) {
             if old_size == new_size {
                 *new_stride = *old_stride;
             } else if *old_size == 1 {
@@ -165,12 +166,12 @@ impl TensorLayout {
             } else {
                 return Err(TensorError::IncompatibleShapes(
                     self.shape.clone(),
-                    shape.to_vec(),
+                    new_shape.to_vec(),
                 ));
             }
         }
         Ok(Self {
-            shape: new_shape,
+            shape: new_shape.to_vec(),
             strides: new_strides,
         })
     }
@@ -221,45 +222,45 @@ impl TensorLayout {
         let old_shape = &squeezed.shape;
         let old_strides = &squeezed.strides;
         let mut new_strides = vec![0; new_shape.len()];
-        let mut old_axis = 0;
-        let mut new_axis = 0;
-        while old_axis < old_shape.len() && new_axis < new_shape.len() {
+        let mut old_dim = 0;
+        let mut new_dim = 0;
+        while old_dim < old_shape.len() && new_dim < new_shape.len() {
             // Find the combination of dimensions from the old and new shapes that have the same
             // number of elements.
-            let old_axis_prev = old_axis;
-            let new_axis_prev = new_axis;
-            let mut old_size = old_shape[old_axis];
-            let mut new_size = new_shape[new_axis];
+            let old_dim_prev = old_dim;
+            let new_dim_prev = new_dim;
+            let mut old_size = old_shape[old_dim];
+            let mut new_size = new_shape[new_dim];
             while old_size != new_size {
                 if old_size < new_size {
-                    old_axis += 1;
-                    old_size *= old_shape[old_axis];
+                    old_dim += 1;
+                    old_size *= old_shape[old_dim];
                 } else {
-                    new_axis += 1;
-                    new_size *= new_shape[new_axis];
+                    new_dim += 1;
+                    new_size *= new_shape[new_dim];
                 }
             }
             // Check if the reshaped dimensions are non-contiguous in memory.
-            if (old_axis_prev..old_axis)
-                .any(|axis| old_strides[axis] != old_strides[axis + 1] * old_shape[axis + 1])
+            if (old_dim_prev..old_dim)
+                .any(|dim| old_strides[dim] != old_strides[dim + 1] * old_shape[dim + 1])
             {
                 return Ok(None);
             }
             // Build a strides backward.
-            new_strides[new_axis] = old_strides[old_axis];
-            for axis in (new_axis_prev + 1..=new_axis).rev() {
-                new_strides[axis - 1] = new_strides[axis] * new_shape[axis];
+            new_strides[new_dim] = old_strides[old_dim];
+            for dim in (new_dim_prev + 1..=new_dim).rev() {
+                new_strides[dim - 1] = new_strides[dim] * new_shape[dim];
             }
-            old_axis += 1;
-            new_axis += 1;
+            old_dim += 1;
+            new_dim += 1;
         }
-        let last_stride = if new_axis > 0 {
-            new_strides[new_axis - 1]
+        let last_stride = if new_dim > 0 {
+            new_strides[new_dim - 1]
         } else {
             1
         };
         // Fill in the remaining strides.
-        for stride in new_strides.iter_mut().skip(new_axis) {
+        for stride in new_strides.iter_mut().skip(new_dim) {
             *stride = last_stride;
         }
         Ok(Some(Self {

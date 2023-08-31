@@ -160,7 +160,8 @@ impl Tensor {
     ///
     /// `matmul` differs from dot in two important ways:
     /// + Multiplication by scalars is not allowed, use * instead.
-    /// + Stacks of matrices are broadcast together as if the matrices were elements, respecting the signature (n,k),(k,m)->(n,m)
+    /// + Stacks of matrices are broadcast together as if the matrices were elements,
+    /// respecting the signature (n,k),(k,m)->(n,m)
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
         let mut lhs_shape = self.layout.shape().to_vec();
         let mut rhs_shape = other.layout.shape().to_vec();
@@ -243,16 +244,16 @@ impl Tensor {
         })
     }
 
-    /// Reduces all elements along the given axis into a single element using the given operation.
-    /// This effectively reduces the rank of the tensor by one. See [NumPy's reduce] for more
-    /// information.
+    /// Reduces all elements along the given dimensions into a single element using the given
+    /// operation. This effectively reduces the rank of the tensor by the number of input
+    /// dimensions. See [NumPy's reduce] for more information.
     ///
     /// [NumPy's reduce]: https://numpy.org/doc/stable/reference/generated/numpy.ufunc.reduce.html#numpy-ufunc-reduce
-    pub fn reduce<F>(&self, axis: &[usize], default: f32, op: F) -> Result<Self, TensorError>
+    pub fn reduce<F>(&self, dims: &[usize], default: f32, op: F) -> Result<Self, TensorError>
     where
         F: Fn(&f32, &f32) -> f32,
     {
-        let (layout, reducer) = self.layout.reduce(axis)?;
+        let (layout, reducer) = self.layout.reduce(dims)?;
         let mut res = vec![default; layout.elems()];
         for idx in self.layout.iter_index() {
             let src_pos = self.layout.index_to_position(&idx);
@@ -274,7 +275,7 @@ impl Tensor {
         }
     }
 
-    /// Swaps 2 axis of the tensor without cloning its data.
+    /// Swaps 2 dimensions of the tensor without cloning its data.
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
         let layout = self.layout.transpose(dim0, dim1)?;
         Ok(Self {
@@ -283,7 +284,7 @@ impl Tensor {
         })
     }
 
-    /// Permutes the tensor axis according to the given axis ordering without cloning its data.
+    /// Permutes the tensor dimensions according to the given ordering without cloning its data.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
         let layout = self.layout.permute(permutation)?;
         Ok(Self {
