@@ -5,6 +5,11 @@ pub fn assert_contiguous_layout(layout: &TensorLayout, shape: &[usize]) {
     assert_eq!(*layout, expected);
 }
 
+pub fn assert_scalar_layout(layout: &TensorLayout) {
+    assert!(layout.shape().is_empty());
+    assert!(layout.strides().is_empty());
+}
+
 pub fn assert_reduced_layout(
     reduced: &TensorLayout,
     reducer: &TensorLayout,
@@ -47,6 +52,13 @@ pub fn assert_contiguous_tensor(tensor: &Tensor, data: &[f32], shape: &[usize]) 
     assert_contiguous_layout(tensor.layout(), shape);
     let data_collected: Vec<_> = tensor.into_iter().copied().collect();
     assert_eq!(data_collected, data);
+}
+
+pub fn assert_scalar_tensor(tensor: &Tensor, data: f32) {
+    assert_scalar_layout(tensor.layout());
+    let data_collected: Vec<_> = tensor.into_iter().copied().collect();
+    assert_eq!(data_collected.len(), 1);
+    assert_eq!(data_collected[0], data);
 }
 
 pub fn assert_zipped_tensor<F>(zipped: &Tensor, t1: &Tensor, t2: &Tensor, op: F)

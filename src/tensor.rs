@@ -105,8 +105,16 @@ impl<'a> IntoIterator for &'a Tensor {
 }
 
 impl Tensor {
+    /// Creates a new tensor holding a scalar.
+    pub fn scalar(x: f32) -> Self {
+        Self {
+            data: Rc::new(vec![x]),
+            layout: TensorLayout::scalar(),
+        }
+    }
+
     /// Creates a new tensor using the given data and layout.
-    pub fn new(data: &[f32], shape: &[usize]) -> Result<Self, TensorError> {
+    pub fn shaped(shape: &[usize], data: &[f32]) -> Result<Self, TensorError> {
         let layout = TensorLayout::from(shape);
         if layout.elems() != data.len() {
             return Err(TensorError::IncompatibleShapes(
@@ -137,6 +145,68 @@ impl Tensor {
     /// Returns the layout of this tensor.
     pub fn layout(&self) -> &TensorLayout {
         &self.layout
+    }
+
+    /// Matrix product of two arrays.
+    ///
+    /// The behavior depends on the arguments in the following ways:
+    /// + If both arguments are 2-D they are multiplied like conventional matrices.
+    /// + If either argument is N-D, N > 2, it is treated as a stack of matrices
+    /// residing in the last two indexes and broadcast accordingly.
+    /// + If the first argument is 1-D, it is promoted to a matrix by prepending
+    /// a 1 to its dimensions. After matrix multiplication the prepended 1 is removed.
+    /// + If the second argument is 1-D, it is promoted to a matrix by appending a 1
+    /// to its dimensions. After matrix multiplication the appended 1 is removed.
+    ///
+    /// `matmul` differs from dot in two important ways:
+    /// + Multiplication by scalars is not allowed, use * instead.
+    /// + Stacks of matrices are broadcast together as if the matrices were elements, respecting the signature (n,k),(k,m)->(n,m)
+    pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        let mut lhs_shape = self.layout.shape().to_vec();
+        let mut rhs_shape = other.layout.shape().to_vec();
+        let orig_lhs_dims = lhs_shape.len();
+        let orig_rhs_dims = rhs_shape.len();
+        if orig_lhs_dims == 0 || orig_rhs_dims == 0 {
+            return Err(TensorError::IncompatibleShapes(lhs_shape, rhs_shape));
+        }
+        // If the LHS dimension is (k), make it (1, k)
+        if orig_lhs_dims == 1 {
+            lhs_shape.insert(0, 1);
+        }
+        // If the RHS dimension is (k), make it (k, 1)
+        if orig_rhs_dims == 1 {
+            rhs_shape.push(1);
+        }
+        if lhs_shape[lhs_shape.len() - 1] != rhs_shape[rhs_shape.len() - 2] {
+            return Err(TensorError::IncompatibleShapes(lhs_shape, rhs_shape));
+        }
+        // Turn (..., m, k) into (..., m, 1, k);
+        lhs_shape.insert(lhs_shape.len() - 1, 1);
+        // Turn (..., k, n) into (..., 1, k, n);
+        rhs_shape.insert(rhs_shape.len() - 2, 1);
+        let lhs = self.reshape(&lhs_shape)?;
+        let rhs = other.reshape(&rhs_shape)?;
+        // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
+        let prod = lhs.zip(
+            &rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2)?,
+            |x, y| x * y,
+        )?;
+        // Sum the last dimension to get (..., m, n, 1)
+        let sumprod = prod.reduce(&[prod.layout.shape().len() - 1], 0.0, |x, y| x + y)?;
+        // Remove last dimension
+        let mut shape = {
+            let s = sumprod.layout.shape();
+            s[..s.len() - 1].to_vec()
+        };
+        // Remove prepended dimension if necessary
+        if orig_lhs_dims == 1 {
+            shape.remove(shape.len() - 2);
+        }
+        // Remove appended dimension if necessary
+        if orig_rhs_dims == 1 {
+            shape.remove(shape.len() - 1);
+        }
+        sumprod.reshape(&shape)
     }
 
     /// Applies the unary function `op` to all elements in the tensor.

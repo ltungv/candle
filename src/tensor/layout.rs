@@ -45,6 +45,14 @@ impl From<&[usize]> for TensorLayout {
 }
 
 impl TensorLayout {
+    /// Returns the shape for a scalar.
+    pub fn scalar() -> Self {
+        Self {
+            shape: Vec::new(),
+            strides: Vec::new(),
+        }
+    }
+
     /// Returns the shape of a tensor.
     pub fn shape(&self) -> &[usize] {
         self.shape.as_slice()
