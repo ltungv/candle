@@ -243,15 +243,16 @@ impl TensorLayout {
                 }
             }
             // Check if the reshaped dimensions are non-contiguous in memory.
-            if (old_dim_prev..old_dim).any(|dim| {
-                old_layout.strides[dim] != old_layout.strides[dim + 1] * old_layout.shape[dim + 1]
-            }) {
-                return Ok(None);
+            for (d1, d2) in (old_dim_prev..old_dim).map(|d| (d, d + 1)) {
+                let expected_stride = old_layout.strides[d2] * old_layout.shape[d2];
+                if old_layout.strides[d1] != expected_stride {
+                    return Ok(None);
+                }
             }
             // Build a strides backward.
             new_strides[new_dim] = old_layout.strides[old_dim];
-            for dim in (new_dim_prev + 1..new_dim + 1).rev() {
-                new_strides[dim - 1] = new_strides[dim] * new_shape[dim];
+            for (d1, d2) in (new_dim_prev..new_dim).map(|d| (d, d + 1)).rev() {
+                new_strides[d1] = new_strides[d2] * new_shape[d2];
             }
             old_dim += 1;
             new_dim += 1;
