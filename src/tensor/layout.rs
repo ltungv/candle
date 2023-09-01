@@ -184,6 +184,7 @@ impl TensorLayout {
             (other.shape(), self.shape())
         };
         let mut broadcasted_shape = Vec::with_capacity(large.len());
+        // Zipping the 2 shapes in reverse order while filling in 1 for the missing dimensions
         for sizes in small
             .iter()
             .rev()
@@ -191,8 +192,11 @@ impl TensorLayout {
             .zip(large.iter().rev())
         {
             match sizes {
+                // Broadcasted shape is the same as the larger shape
                 (1, d) => broadcasted_shape.push(*d),
+                // Broadcasted shape is the same as the smaller shape
                 (d, 1) => broadcasted_shape.push(*d),
+                // The dimensions are equals
                 (dx, dy) if dx == dy => broadcasted_shape.push(*dx),
                 _ => {
                     return Err(TensorError::IncompatibleShapes(
@@ -218,50 +222,46 @@ impl TensorLayout {
                 new_shape.to_vec(),
             ));
         }
-        let squeezed = self.squeeze();
-        let old_shape = &squeezed.shape;
-        let old_strides = &squeezed.strides;
-        let mut new_strides = vec![0; new_shape.len()];
+        let old_layout = self.squeeze();
+        let mut new_strides = vec![1; new_shape.len()];
         let mut old_dim = 0;
         let mut new_dim = 0;
-        while old_dim < old_shape.len() && new_dim < new_shape.len() {
+        while old_dim < old_layout.shape.len() && new_dim < new_shape.len() {
             // Find the combination of dimensions from the old and new shapes that have the same
             // number of elements.
             let old_dim_prev = old_dim;
             let new_dim_prev = new_dim;
-            let mut old_size = old_shape[old_dim];
+            let mut old_size = old_layout.shape[old_dim];
             let mut new_size = new_shape[new_dim];
             while old_size != new_size {
                 if old_size < new_size {
                     old_dim += 1;
-                    old_size *= old_shape[old_dim];
+                    old_size *= old_layout.shape[old_dim];
                 } else {
                     new_dim += 1;
                     new_size *= new_shape[new_dim];
                 }
             }
             // Check if the reshaped dimensions are non-contiguous in memory.
-            if (old_dim_prev..old_dim)
-                .any(|dim| old_strides[dim] != old_strides[dim + 1] * old_shape[dim + 1])
-            {
+            if (old_dim_prev..old_dim).any(|dim| {
+                old_layout.strides[dim] != old_layout.strides[dim + 1] * old_layout.shape[dim + 1]
+            }) {
                 return Ok(None);
             }
             // Build a strides backward.
-            new_strides[new_dim] = old_strides[old_dim];
-            for dim in (new_dim_prev + 1..=new_dim).rev() {
+            new_strides[new_dim] = old_layout.strides[old_dim];
+            for dim in (new_dim_prev + 1..new_dim + 1).rev() {
                 new_strides[dim - 1] = new_strides[dim] * new_shape[dim];
             }
             old_dim += 1;
             new_dim += 1;
         }
-        let last_stride = if new_dim > 0 {
-            new_strides[new_dim - 1]
-        } else {
-            1
-        };
-        // Fill in the remaining strides.
-        for stride in new_strides.iter_mut().skip(new_dim) {
-            *stride = last_stride;
+        if new_dim > 0 {
+            // Fill in the remaining strides.
+            let last_stride = new_strides[new_dim - 1];
+            for stride in new_strides.iter_mut().skip(new_dim) {
+                *stride = last_stride;
+            }
         }
         Ok(Some(Self {
             shape: new_shape.to_vec(),

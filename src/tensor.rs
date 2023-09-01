@@ -255,12 +255,12 @@ impl Tensor {
         // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
         let lhs = self.reshape(&lhs_shape)?;
         let rhs = other.reshape(&rhs_shape)?;
-        let prod = (&lhs * rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2))?;
+        let broadcasted_mul = (&lhs * rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2))?;
         // Sum the last dimension to get (..., m, n, 1)
-        let sumprod = prod.sum(&[prod.layout.shape().len() - 1])?;
+        let sum_last_dim = broadcasted_mul.sum(&[broadcasted_mul.layout.shape().len() - 1])?;
         // Remove last dimension
         let mut shape = {
-            let s = sumprod.layout.shape();
+            let s = sum_last_dim.layout.shape();
             s[..s.len() - 1].to_vec()
         };
         // Remove prepended dimension if necessary
@@ -271,7 +271,7 @@ impl Tensor {
         if orig_rhs_dims == 1 {
             shape.remove(shape.len() - 1);
         }
-        sumprod.reshape(&shape)
+        sum_last_dim.reshape(&shape)
     }
 
     /// Returns a new tensor reduced along the given dimensions by summing all elements.
