@@ -6,7 +6,7 @@ use std::{
     collections::{HashSet, VecDeque},
     hash::Hash,
     ops::{Add, Div, Mul, Sub},
-    sync::Arc,
+    rc::Rc,
     time,
 };
 
@@ -31,7 +31,7 @@ struct VarInner {
 /// A scalar variable.
 #[derive(Debug, Clone)]
 pub struct Var {
-    inner: Arc<RefCell<VarInner>>,
+    inner: Rc<RefCell<VarInner>>,
 }
 
 impl Eq for Var {}
@@ -245,7 +245,7 @@ impl Var {
     }
 
     fn from_call(value: f64, call: Call) -> Self {
-        let inner = Arc::new(RefCell::new(VarInner {
+        let inner = Rc::new(RefCell::new(VarInner {
             value,
             grad: 0.0,
             call,
