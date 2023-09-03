@@ -267,7 +267,7 @@ impl<'a> Neuron<'a> {
     pub fn rand<R, D>(
         tape: &'a Tape,
         rng: &mut R,
-        distribution: D,
+        distribution: &D,
         nonlinearity: fn(&Var<'a>) -> Var<'a>,
         input_size: usize,
     ) -> Self
@@ -314,7 +314,7 @@ impl<'a> Layer<'a> {
     pub fn rand<R, D>(
         tape: &'a Tape,
         rng: &mut R,
-        distribution: D,
+        distribution: &D,
         nonlinearity: fn(&Var<'a>) -> Var<'a>,
         input_size: usize,
         output_size: usize,

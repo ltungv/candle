@@ -30,7 +30,7 @@ fn main() {
         let mut mlp = ad_backward_tape::Mlp::new(vec![ad_backward_tape::Layer::rand(
             &tape,
             &mut rng,
-            distribution,
+            &distribution,
             ad_backward_tape::Var::sigmoid,
             2,
             1,

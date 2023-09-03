@@ -1,4 +1,8 @@
-use candle::{dataset::Sample, scalar::ad_backward_graph, scalar::ad_backward_tape};
+use candle::{
+    dataset::Sample,
+    scalar::ad_backward_tape,
+    scalar::{ad_backward_graph, ad_backward_tape_owned},
+};
 use rand::{seq::SliceRandom, Rng};
 use rand_distr::StandardNormal;
 
@@ -11,7 +15,7 @@ fn main() {
         let mut mlp = ad_backward_tape::Mlp::new(vec![ad_backward_tape::Layer::rand(
             &tape,
             &mut rng,
-            distribution,
+            &distribution,
             ad_backward_tape::Var::identity,
             2,
             1,
@@ -40,6 +44,25 @@ fn main() {
             let x2 = ad_backward_graph::Var::new(sample.input[1]);
             let z = mlp.forward(&[x1, x2]);
             println!("pred: {}", z[0].value());
+            println!("real: {}", sample.output[0]);
+            println!("================")
+        }
+    }
+    {
+        let mlp = ad_backward_tape_owned::Mlp::new(vec![ad_backward_tape_owned::Layer::rand(
+            &mut rng,
+            &distribution,
+            ad_backward_tape_owned::Var::identity,
+            2,
+            1,
+        )]);
+        let mut mlp_traced = mlp.trace();
+        mlp_traced.train(&mut rng, &dataset, 100, 100, 0.001, 20);
+        for sample in dataset.choose_multiple(&mut rng, 5) {
+            let x1 = ad_backward_tape_owned::Var::new(sample.input[0]);
+            let x2 = ad_backward_tape_owned::Var::new(sample.input[1]);
+            let z = mlp_traced.forward(&[x1, x2]);
+            println!("pred: {}", z[0].value);
             println!("real: {}", sample.output[0]);
             println!("================")
         }

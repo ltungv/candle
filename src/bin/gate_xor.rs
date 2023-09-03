@@ -31,7 +31,7 @@ fn main() {
             ad_backward_tape::Layer::rand(
                 &tape,
                 &mut rng,
-                distribution,
+                &distribution,
                 ad_backward_tape::Var::sigmoid,
                 2,
                 3,
@@ -39,7 +39,7 @@ fn main() {
             ad_backward_tape::Layer::rand(
                 &tape,
                 &mut rng,
-                distribution,
+                &distribution,
                 ad_backward_tape::Var::sigmoid,
                 3,
                 1,
