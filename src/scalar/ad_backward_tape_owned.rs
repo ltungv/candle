@@ -29,20 +29,6 @@ pub struct Tape {
     nodes: BTreeMap<usize, LocalGradient>,
 }
 
-impl Tape {
-    /// Merge two tapes together.
-    pub fn merge(mut self, mut other: Self) -> Self {
-        // NOTE: This takes way too long.
-        if self.nodes.len() < other.nodes.len() {
-            other.nodes.extend(self.nodes);
-            other
-        } else {
-            self.nodes.extend(other.nodes);
-            self
-        }
-    }
-}
-
 /// A variable in the computation graph. Operation on variables return new variables and do not
 /// mutate the original ones.
 #[derive(Clone, Debug)]
@@ -92,11 +78,9 @@ impl Var {
             // Traverse the DAG in topological order.
             while let Some(id) = to_visit.pop_front() {
                 if let Some(grad_local) = tape.nodes.get(&id) {
-                    // The following `unwrap` is safe because we must inserted the gradient of the currently
-                    // visited node.
-                    let grad_global = gradients.get(&id).copied().unwrap();
-                    // Accumulate the gradients.
+                    let grad_global = gradients[&id];
                     for i in 0..2 {
+                        // Accumulate the gradients.
                         let grad = gradients.entry(grad_local.from[i]).or_insert(0.0);
                         *grad += grad_local.grad[i] * grad_global;
                         if grad_local.from[i] != id {
@@ -156,7 +140,16 @@ impl Var {
             lhs_tape.or(rhs_tape)
         } else {
             match (lhs_tape, rhs_tape) {
-                (Some(tl), Some(tr)) => Some(tl.merge(tr)),
+                (Some(mut tl), Some(mut tr)) => {
+                    // NOTE: This takes way too long.
+                    if tl.nodes.len() > tr.nodes.len() {
+                        tl.nodes.extend(tr.nodes);
+                        Some(tl)
+                    } else {
+                        tr.nodes.extend(tl.nodes);
+                        Some(tr)
+                    }
+                }
                 (Some(t), None) => Some(t),
                 (None, Some(t)) => Some(t),
                 (None, None) => None,
@@ -272,11 +265,6 @@ impl Neuron {
     /// Marks the layer to have its gradients traced.
     fn trace(&mut self) {
         self.traced = true;
-    }
-
-    /// Marks the layer to not have its gradients traced.
-    fn no_trace(&mut self) {
-        self.traced = false;
     }
 
     /// Applies the neuron to the given input.

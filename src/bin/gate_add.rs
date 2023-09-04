@@ -49,19 +49,19 @@ fn main() {
         }
     }
     {
-        let mlp = ad_backward_tape_owned::Mlp::new(vec![ad_backward_tape_owned::Layer::rand(
+        let mut mlp = ad_backward_tape_owned::Mlp::new(vec![ad_backward_tape_owned::Layer::rand(
             &mut rng,
             &distribution,
             ad_backward_tape_owned::Var::identity,
             2,
             1,
         )]);
-        let mut mlp_traced = mlp.trace();
-        mlp_traced.train(&mut rng, &dataset, 100, 100, 0.001, 20);
+        mlp.trace();
+        mlp.train(&mut rng, &dataset, 100, 100, 0.001, 20);
         for sample in dataset.choose_multiple(&mut rng, 5) {
             let x1 = ad_backward_tape_owned::Var::new(sample.input[0]);
             let x2 = ad_backward_tape_owned::Var::new(sample.input[1]);
-            let z = mlp_traced.forward(&[x1, x2]);
+            let z = mlp.forward(&[x1, x2]);
             println!("pred: {}", z[0].value);
             println!("real: {}", sample.output[0]);
             println!("================")
