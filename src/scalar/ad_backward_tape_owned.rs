@@ -241,6 +241,7 @@ impl Div for Var {
 /// A neuron holding a set of weights and a bias.
 #[derive(Debug)]
 struct Neuron {
+    traced: bool,
     bias: Var,
     weights: Vec<Var>,
     nonlinearity: fn(Var) -> Var,
@@ -259,6 +260,7 @@ impl Neuron {
         D: Distribution<f64> + Copy,
     {
         Self {
+            traced: false,
             bias: Var::new(rng.sample(distribution)),
             weights: (0..input_size)
                 .map(|_| Var::new(rng.sample(distribution)))
@@ -267,24 +269,31 @@ impl Neuron {
         }
     }
 
-    /// Returns a gradient-traced version of the neuron.
-    fn trace(&self) -> Self {
-        Self {
-            bias: self.bias.trace(),
-            weights: self.weights.iter().map(|w| w.trace()).collect(),
-            nonlinearity: self.nonlinearity,
-        }
+    /// Marks the layer to have its gradients traced.
+    fn trace(&mut self) {
+        self.traced = true;
+    }
+
+    /// Marks the layer to not have its gradients traced.
+    fn no_trace(&mut self) {
+        self.traced = false;
     }
 
     /// Applies the neuron to the given input.
     pub fn forward(&self, input: &[Var]) -> Var {
         assert_eq!(input.len(), self.weights.len());
-        (self.nonlinearity)(
+        let z = if self.traced {
             self.weights
                 .iter()
                 .zip(input)
-                .fold(self.bias.clone(), |acc, (w, x)| acc + w.clone() * x.clone()),
-        )
+                .fold(self.bias.trace(), |acc, (w, x)| acc + w.trace() * x.clone())
+        } else {
+            self.weights
+                .iter()
+                .zip(input)
+                .fold(self.bias.clone(), |acc, (w, x)| acc + w.clone() * x.clone())
+        };
+        (self.nonlinearity)(z)
     }
 
     fn parameters_mut(&mut self) -> Vec<&mut Var> {
@@ -321,11 +330,14 @@ impl Layer {
         }
     }
 
-    /// Returns a gradient-traced version of the layer.
-    pub fn trace(&self) -> Self {
-        Self {
-            neurons: self.neurons.iter().map(|n| n.trace()).collect(),
-        }
+    /// Marks the layer to have its gradients traced.
+    pub fn trace(&mut self) {
+        self.neurons.iter_mut().for_each(Neuron::trace);
+    }
+
+    /// Marks the layer to not have its gradients traced.
+    pub fn no_trace(&mut self) {
+        self.neurons.iter_mut().for_each(Neuron::trace);
     }
 
     /// Applies the layer to the given input.
@@ -355,11 +367,14 @@ impl Mlp {
         Self { layers }
     }
 
-    /// Returns a gradient-traced version of the MLP.
-    pub fn trace(&self) -> Self {
-        Self {
-            layers: self.layers.iter().map(|l| l.trace()).collect(),
-        }
+    /// Marks the MLP to have its gradients traced.
+    pub fn trace(&mut self) {
+        self.layers.iter_mut().for_each(Layer::trace);
+    }
+
+    /// Marks the MLP to not have its gradients traced.
+    pub fn no_trace(&mut self) {
+        self.layers.iter_mut().for_each(Layer::no_trace);
     }
 
     /// Applies the MLP to the given input.

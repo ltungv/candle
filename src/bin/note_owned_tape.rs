@@ -14,7 +14,7 @@ fn main() {
     let mut rng = rand::thread_rng();
     let distribution = StandardNormal;
 
-    let mlp = Mlp::new(vec![Layer::rand(
+    let mut mlp = Mlp::new(vec![Layer::rand(
         &mut rng,
         &distribution,
         Var::sigmoid,
@@ -32,11 +32,12 @@ fn main() {
     println!("Inference without gradients accumulation");
     println!("runtime {}ms", duration.as_millis());
 
+    mlp.trace();
+
     let start = time::Instant::now();
-    let mlp_traced = mlp.trace();
     for sample in &dataset {
         let input: Vec<_> = sample.input.iter().map(|x| Var::new(*x)).collect();
-        let _ = mlp_traced.forward(&input);
+        let _ = mlp.forward(&input);
     }
     let duration = time::Instant::now() - start;
     println!("--------------------------------");
@@ -44,10 +45,9 @@ fn main() {
     println!("runtime {}ms", duration.as_millis());
 
     let start = time::Instant::now();
-    let mlp_traced = mlp.trace();
     for sample in &dataset {
         let input: Vec<_> = sample.input.iter().map(|x| Var::new(*x)).collect();
-        let output = mlp_traced.forward(&input);
+        let output = mlp.forward(&input);
         for x in output {
             let _ = x.gradients();
         }
