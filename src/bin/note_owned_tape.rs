@@ -7,27 +7,55 @@ use candle::{
 use rand::Rng;
 use rand_distr::StandardNormal;
 
+const NUM_SAMPLES: usize = 100000;
+
 fn main() {
-    let dataset = dataset_add(100000);
+    let dataset = dataset_add(NUM_SAMPLES);
     let mut rng = rand::thread_rng();
     let distribution = StandardNormal;
-    {
-        let mlp = Mlp::new(vec![Layer::rand(
-            &mut rng,
-            &distribution,
-            Var::sigmoid,
-            2,
-            1,
-        )]);
-        let start = time::Instant::now();
-        let mlp_traced = mlp.trace();
-        for sample in &dataset {
-            let input: Vec<_> = sample.input.iter().map(|x| Var::new(*x)).collect();
-            let _ = mlp_traced.forward(&input);
-        }
-        let duration = time::Instant::now() - start;
-        println!("inference took {}ms", duration.as_millis());
+
+    let mlp = Mlp::new(vec![Layer::rand(
+        &mut rng,
+        &distribution,
+        Var::sigmoid,
+        2,
+        1,
+    )]);
+
+    let start = time::Instant::now();
+    for sample in &dataset {
+        let input: Vec<_> = sample.input.iter().map(|x| Var::new(*x)).collect();
+        let _ = mlp.forward(&input);
     }
+    let duration = time::Instant::now() - start;
+    println!("--------------------------------");
+    println!("Inference without gradients accumulation");
+    println!("runtime {}ms", duration.as_millis());
+
+    let start = time::Instant::now();
+    let mlp_traced = mlp.trace();
+    for sample in &dataset {
+        let input: Vec<_> = sample.input.iter().map(|x| Var::new(*x)).collect();
+        let _ = mlp_traced.forward(&input);
+    }
+    let duration = time::Instant::now() - start;
+    println!("--------------------------------");
+    println!("Inference with gradients accumulation");
+    println!("runtime {}ms", duration.as_millis());
+
+    let start = time::Instant::now();
+    let mlp_traced = mlp.trace();
+    for sample in &dataset {
+        let input: Vec<_> = sample.input.iter().map(|x| Var::new(*x)).collect();
+        let output = mlp_traced.forward(&input);
+        for x in output {
+            let _ = x.gradients();
+        }
+    }
+    let duration = time::Instant::now() - start;
+    println!("--------------------------------");
+    println!("Inference with gradients");
+    println!("runtime {}ms", duration.as_millis());
 }
 
 fn dataset_add(count: usize) -> Vec<Sample<2, 1>> {

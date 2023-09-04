@@ -32,6 +32,7 @@ pub struct Tape {
 impl Tape {
     /// Merge two tapes together.
     pub fn merge(mut self, mut other: Self) -> Self {
+        // NOTE: This takes way too long.
         if self.nodes.len() < other.nodes.len() {
             other.nodes.extend(self.nodes);
             other
@@ -97,13 +98,10 @@ impl Var {
                     // Accumulate the gradients.
                     for i in 0..2 {
                         let grad = gradients.entry(grad_local.from[i]).or_insert(0.0);
-                        *grad += grad_local.grad[0] * grad_global;
-                    }
-                    if grad_local.from[0] != id {
-                        to_visit.push_back(grad_local.from[0]);
-                    }
-                    if grad_local.from[1] != id {
-                        to_visit.push_back(grad_local.from[1]);
+                        *grad += grad_local.grad[i] * grad_global;
+                        if grad_local.from[i] != id {
+                            to_visit.push_back(grad_local.from[i]);
+                        }
                     }
                 }
             }
@@ -151,19 +149,20 @@ impl Var {
         }
     }
 
-    fn merge_tape(self, other: Self) -> Option<Tape> {
-        match (self.tape, other.tape) {
-            (Some(lhs), Some(rhs)) => {
-                if self.id == other.id {
-                    Some(lhs)
-                } else {
-                    Some(lhs.merge(rhs))
-                }
+    fn merge_tapes(mut self, mut other: Self) -> (Option<Tape>, Var, Var) {
+        let lhs_tape = self.tape.take();
+        let rhs_tape = other.tape.take();
+        let tape = if self.id == other.id {
+            lhs_tape.or(rhs_tape)
+        } else {
+            match (lhs_tape, rhs_tape) {
+                (Some(tl), Some(tr)) => Some(tl.merge(tr)),
+                (Some(t), None) => Some(t),
+                (None, Some(t)) => Some(t),
+                (None, None) => None,
             }
-            (Some(lhs), None) => Some(lhs),
-            (None, Some(rhs)) => Some(rhs),
-            (None, None) => None,
-        }
+        };
+        (tape, self, other)
     }
 }
 
@@ -171,12 +170,13 @@ impl Add for Var {
     type Output = Var;
 
     fn add(self, other: Self) -> Self::Output {
-        let mut var = Self::new(self.value + other.value);
-        let grad = LocalGradient {
-            from: [self.id, other.id],
-            grad: [1.0, 1.0],
-        };
-        if let Some(mut tape) = self.merge_tape(other) {
+        let (tape, lhs, rhs) = self.merge_tapes(other);
+        let mut var = Self::new(lhs.value + rhs.value);
+        if let Some(mut tape) = tape {
+            let grad = LocalGradient {
+                from: [lhs.id, rhs.id],
+                grad: [1.0, 1.0],
+            };
             tape.nodes.insert(var.id, grad);
             var.tape = Some(tape);
         }
@@ -188,12 +188,13 @@ impl Sub for Var {
     type Output = Var;
 
     fn sub(self, other: Self) -> Self::Output {
-        let mut var = Self::new(self.value - other.value);
-        let grad = LocalGradient {
-            from: [self.id, other.id],
-            grad: [1.0, -1.0],
-        };
-        if let Some(mut tape) = self.merge_tape(other) {
+        let (tape, lhs, rhs) = self.merge_tapes(other);
+        let mut var = Self::new(lhs.value - rhs.value);
+        if let Some(mut tape) = tape {
+            let grad = LocalGradient {
+                from: [lhs.id, rhs.id],
+                grad: [1.0, -1.0],
+            };
             tape.nodes.insert(var.id, grad);
             var.tape = Some(tape);
         }
@@ -205,12 +206,13 @@ impl Mul for Var {
     type Output = Var;
 
     fn mul(self, other: Self) -> Self::Output {
-        let mut var = Self::new(self.value * other.value);
-        let grad = LocalGradient {
-            from: [self.id, other.id],
-            grad: [other.value, self.value],
-        };
-        if let Some(mut tape) = self.merge_tape(other) {
+        let (tape, lhs, rhs) = self.merge_tapes(other);
+        let mut var = Self::new(lhs.value * rhs.value);
+        if let Some(mut tape) = tape {
+            let grad = LocalGradient {
+                from: [lhs.id, rhs.id],
+                grad: [rhs.value, lhs.value],
+            };
             tape.nodes.insert(var.id, grad);
             var.tape = Some(tape);
         }
@@ -222,12 +224,13 @@ impl Div for Var {
     type Output = Var;
 
     fn div(self, other: Self) -> Self::Output {
-        let mut var = Self::new(self.value / other.value);
-        let grad = LocalGradient {
-            from: [self.id, other.id],
-            grad: [1.0 / other.value, -self.value / (other.value * other.value)],
-        };
-        if let Some(mut tape) = self.merge_tape(other) {
+        let (tape, lhs, rhs) = self.merge_tapes(other);
+        let mut var = Self::new(lhs.value / rhs.value);
+        if let Some(mut tape) = tape {
+            let grad = LocalGradient {
+                from: [lhs.id, rhs.id],
+                grad: [1.0 / rhs.value, -lhs.value / (rhs.value * rhs.value)],
+            };
             tape.nodes.insert(var.id, grad);
             var.tape = Some(tape);
         }
