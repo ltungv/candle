@@ -1,30 +1,34 @@
 pub mod assert;
 
 use assert::assert_contiguous_layout;
-use candle::tensor::layout::TensorLayout;
+use candle::tensor::layout::Layout;
 
 use crate::assert::{assert_expanded_layout, assert_reduced_layout};
 
 #[test]
-fn test_layout_convert_from_collections() {
-    let data = [2, 3, 4];
+fn test_layout_from_shape() {
+    let shape = [2, 3, 4];
 
-    let layout = TensorLayout::from(data.as_slice());
-    assert_contiguous_layout(&layout, &data);
+    let layout = Layout::from(shape.as_slice());
+    assert_eq!(layout.shape(), &shape);
+    assert_eq!(layout.strides(), &[12, 4, 1]);
 
-    let layout = TensorLayout::from(data.to_vec());
-    assert_contiguous_layout(&layout, &data);
+    let layout = Layout::from(shape.to_vec());
+    assert_eq!(layout.shape(), &shape);
+    assert_eq!(layout.strides(), &[12, 4, 1]);
 
-    let layout = TensorLayout::from(&data);
-    assert_contiguous_layout(&layout, &data);
+    let layout = Layout::from(&shape);
+    assert_eq!(layout.shape(), &shape);
+    assert_eq!(layout.strides(), &[12, 4, 1]);
 
-    let layout = TensorLayout::from(data);
-    assert_contiguous_layout(&layout, &data);
+    let layout = Layout::from(shape);
+    assert_eq!(layout.shape(), &shape);
+    assert_eq!(layout.strides(), &[12, 4, 1]);
 }
 
 #[test]
 fn test_layout_reduce() {
-    let layout = TensorLayout::from(&[2, 3, 4]);
+    let layout = Layout::from(&[2, 3, 4]);
 
     let (reduced, reducer) = layout.reduce(&[0]).unwrap();
     assert_reduced_layout(&reduced, &reducer, &[0], &[1, 3, 4]);
@@ -47,26 +51,26 @@ fn test_layout_reduce() {
 
 #[test]
 fn test_layout_squeeze() {
-    let layout = TensorLayout::from(&[1, 2, 3]);
+    let layout = Layout::from(&[1, 2, 3]);
     let squeezed = layout.squeeze();
     assert_contiguous_layout(&squeezed, &[2, 3]);
 
-    let layout = TensorLayout::from(&[2, 1, 3]);
+    let layout = Layout::from(&[2, 1, 3]);
     let squeezed = layout.squeeze();
     assert_contiguous_layout(&squeezed, &[2, 3]);
 
-    let layout = TensorLayout::from(&[2, 3, 1]);
+    let layout = Layout::from(&[2, 3, 1]);
     let squeezed = layout.squeeze();
     assert_contiguous_layout(&squeezed, &[2, 3]);
 
-    let layout = TensorLayout::from(&[1, 1, 1]);
+    let layout = Layout::from(&[1, 1, 1]);
     let squeezed = layout.squeeze();
     assert_contiguous_layout(&squeezed, &[]);
 }
 
 #[test]
 fn test_layout_transpose() {
-    let layout = TensorLayout::from(&[2, 3, 4]);
+    let layout = Layout::from(&[2, 3, 4]);
 
     let transposed = layout.transpose(0, 1).unwrap();
     assert_eq!(transposed.shape(), &[3, 2, 4]);
@@ -95,7 +99,7 @@ fn test_layout_transpose() {
 
 #[test]
 fn test_layout_permute() {
-    let layout = TensorLayout::from(&[2, 3, 4]);
+    let layout = Layout::from(&[2, 3, 4]);
 
     let permuted = layout.permute(&[0, 1, 2]).unwrap();
     assert_eq!(permuted.shape(), &[2, 3, 4]);
@@ -124,57 +128,57 @@ fn test_layout_permute() {
 
 #[test]
 fn test_layout_expand() {
-    let layout = TensorLayout::from(&[1]);
+    let layout = Layout::from(&[1]);
     let expanded = layout.expand(&[3]).unwrap();
     assert_expanded_layout(&expanded, &layout, &[3]);
 
-    let layout = TensorLayout::from(&[1]);
+    let layout = Layout::from(&[1]);
     let expanded = layout.expand(&[3, 2]).unwrap();
     assert_expanded_layout(&expanded, &layout, &[3, 2]);
 
-    let layout = TensorLayout::from(&[2, 1, 1]);
+    let layout = Layout::from(&[2, 1, 1]);
     let expanded = layout.expand(&[7, 2, 4, 5]).unwrap();
     assert_expanded_layout(&expanded, &layout, &[7, 2, 4, 5]);
 
-    let layout = TensorLayout::from(&[1, 1, 2]);
+    let layout = Layout::from(&[1, 1, 2]);
     let expanded = layout.expand(&[4, 3, 2]).unwrap();
     assert_expanded_layout(&expanded, &layout, &[4, 3, 2]);
 }
 
 #[test]
 fn test_layout_broadcast() {
-    let t1 = TensorLayout::from(&[1]);
-    let t2 = TensorLayout::from(&[3]);
+    let t1 = Layout::from(&[1]);
+    let t2 = Layout::from(&[3]);
     let (r1, r2) = t1.broadcast(&t2).unwrap();
     assert_expanded_layout(&r1, &t1, &[3]);
     assert_expanded_layout(&r2, &t2, &[3]);
 
-    let t1 = TensorLayout::from(&[3]);
-    let t2 = TensorLayout::from(&[1]);
+    let t1 = Layout::from(&[3]);
+    let t2 = Layout::from(&[1]);
     let (r1, r2) = t1.broadcast(&t2).unwrap();
     assert_expanded_layout(&r1, &t1, &[3]);
     assert_expanded_layout(&r2, &t2, &[3]);
 
-    let t1 = TensorLayout::from(&[2, 3]);
-    let t2 = TensorLayout::from(&[1]);
+    let t1 = Layout::from(&[2, 3]);
+    let t2 = Layout::from(&[1]);
     let (r1, r2) = t1.broadcast(&t2).unwrap();
     assert_expanded_layout(&r1, &t1, &[2, 3]);
     assert_expanded_layout(&r2, &t2, &[2, 3]);
 
-    let t1 = TensorLayout::from(&[3, 2]);
-    let t2 = TensorLayout::from(&[1]);
+    let t1 = Layout::from(&[3, 2]);
+    let t2 = Layout::from(&[1]);
     let (r1, r2) = t1.broadcast(&t2).unwrap();
     assert_expanded_layout(&r1, &t1, &[3, 2]);
     assert_expanded_layout(&r2, &t2, &[3, 2]);
 
-    let t1 = TensorLayout::from(&[2, 1, 4]);
-    let t2 = TensorLayout::from(&[7, 2, 4, 1]);
+    let t1 = Layout::from(&[2, 1, 4]);
+    let t2 = Layout::from(&[7, 2, 4, 1]);
     let (r1, r2) = t1.broadcast(&t2).unwrap();
     assert_expanded_layout(&r1, &t1, &[7, 2, 4, 4]);
     assert_expanded_layout(&r2, &t2, &[7, 2, 4, 4]);
 
-    let t1 = TensorLayout::from(&[1, 4, 1, 2]);
-    let t2 = TensorLayout::from(&[1, 3, 1]);
+    let t1 = Layout::from(&[1, 4, 1, 2]);
+    let t2 = Layout::from(&[1, 3, 1]);
     let (r1, r2) = t1.broadcast(&t2).unwrap();
     assert_expanded_layout(&r1, &t1, &[1, 4, 3, 2]);
     assert_expanded_layout(&r2, &t2, &[1, 4, 3, 2]);
@@ -182,7 +186,7 @@ fn test_layout_broadcast() {
 
 #[test]
 fn test_layout_reshape() {
-    let layout = TensorLayout::from(&[2, 3, 4]);
+    let layout = Layout::from(&[2, 3, 4]);
 
     let l = layout.reshape(&[6, 4]).unwrap().unwrap();
     assert_contiguous_layout(&l, &[6, 4]);
@@ -202,7 +206,7 @@ fn test_layout_reshape() {
 
 #[test]
 fn test_layout_index_to_position() {
-    let layout = TensorLayout::from(&[2, 2, 2]);
+    let layout = Layout::from(&[2, 2, 2]);
     let indices: Vec<_> = (0..2)
         .flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| vec![x, y, z])))
         .collect();
@@ -214,7 +218,7 @@ fn test_layout_index_to_position() {
 
 #[test]
 fn test_layout_position_to_index() {
-    let layout = TensorLayout::from(&[2, 2, 2]);
+    let layout = Layout::from(&[2, 2, 2]);
     let indices: Vec<_> = (0..2)
         .flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| vec![x, y, z])))
         .collect();
@@ -226,7 +230,7 @@ fn test_layout_position_to_index() {
 
 #[test]
 fn test_layout_index_iterator() {
-    let layout = TensorLayout::from(&[2, 3, 4]);
+    let layout = Layout::from(&[2, 3, 4]);
     let indices: Vec<_> = (0..2)
         .flat_map(|x| (0..3).flat_map(move |y| (0..4).map(move |z| vec![x, y, z])))
         .collect();
@@ -237,7 +241,7 @@ fn test_layout_index_iterator() {
 
 #[test]
 fn test_layout_position_iterator() {
-    let layout = TensorLayout::from(&[2, 3, 4]);
+    let layout = Layout::from(&[2, 3, 4]);
     for (i, out) in layout.iter_position().enumerate() {
         assert_eq!(out, i);
     }

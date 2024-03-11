@@ -1,21 +1,16 @@
-use candle::tensor::{layout::TensorLayout, Tensor};
+use candle::tensor::{layout::Layout, Tensor};
 
-pub fn assert_contiguous_layout(layout: &TensorLayout, shape: &[usize]) {
-    let expected = TensorLayout::from(shape);
+pub fn assert_contiguous_layout(layout: &Layout, shape: &[usize]) {
+    let expected = Layout::from(shape);
     assert_eq!(*layout, expected);
 }
 
-pub fn assert_scalar_layout(layout: &TensorLayout) {
+pub fn assert_scalar_layout(layout: &Layout) {
     assert!(layout.shape().is_empty());
     assert!(layout.strides().is_empty());
 }
 
-pub fn assert_reduced_layout(
-    reduced: &TensorLayout,
-    reducer: &TensorLayout,
-    dims: &[usize],
-    shape: &[usize],
-) {
+pub fn assert_reduced_layout(reduced: &Layout, reducer: &Layout, dims: &[usize], shape: &[usize]) {
     assert_contiguous_layout(reduced, shape);
     let mut strides = reduced.strides().to_vec();
     for d in dims {
@@ -25,7 +20,7 @@ pub fn assert_reduced_layout(
     assert_eq!(reducer.strides(), strides);
 }
 
-pub fn assert_expanded_layout(expanded: &TensorLayout, original: &TensorLayout, shape: &[usize]) {
+pub fn assert_expanded_layout(expanded: &Layout, original: &Layout, shape: &[usize]) {
     let mut strides = Vec::with_capacity(shape.len());
     for ((d1, d2), stride) in original
         .shape()
