@@ -13,7 +13,7 @@ use rand_distr::Distribution;
 
 use self::{
     error::TensorError,
-    layout::{PositionIterator, TensorLayout},
+    layout::{PositionIterator, Layout},
 };
 
 /// An N-dimension array holding elements row-major order. Tensors are immutable and new ones are
@@ -22,7 +22,7 @@ use self::{
 #[derive(Debug)]
 pub struct Tensor {
     data: Arc<Vec<f32>>,
-    layout: TensorLayout,
+    layout: Layout,
 }
 
 impl ops::Add for &Tensor {
@@ -94,7 +94,7 @@ impl From<Vec<f32>> for Tensor {
         let data_len = data.len();
         Self {
             data: Arc::new(data),
-            layout: TensorLayout::from(&[data_len]),
+            layout: Layout::from(&[data_len]),
         }
     }
 }
@@ -176,13 +176,13 @@ impl Tensor {
     pub fn scalar(x: f32) -> Self {
         Self {
             data: Arc::new(vec![x]),
-            layout: TensorLayout::scalar(),
+            layout: Layout::scalar(),
         }
     }
 
     /// Creates a new tensor using the given data and layout.
     pub fn shaped(shape: &[usize], data: &[f32]) -> Result<Self, TensorError> {
-        let layout = TensorLayout::from(shape);
+        let layout = Layout::from(shape);
         if layout.elems() != data.len() {
             return Err(TensorError::IncompatibleShapes(
                 shape.to_vec(),
@@ -201,7 +201,7 @@ impl Tensor {
         R: Rng,
         D: Distribution<f32>,
     {
-        let layout = TensorLayout::from(shape);
+        let layout = Layout::from(shape);
         let data = rng.sample_iter(distribution).take(layout.elems()).collect();
         Self {
             data: Arc::new(data),
@@ -210,7 +210,7 @@ impl Tensor {
     }
 
     /// Returns the layout of this tensor.
-    pub fn layout(&self) -> &TensorLayout {
+    pub fn layout(&self) -> &Layout {
         &self.layout
     }
 
@@ -295,7 +295,7 @@ impl Tensor {
         }
         Self {
             data: Arc::new(res),
-            layout: TensorLayout::from(self.layout.shape()),
+            layout: Layout::from(self.layout.shape()),
         }
     }
 
@@ -314,7 +314,7 @@ impl Tensor {
         }
         Ok(Self {
             data: Arc::new(res),
-            layout: TensorLayout::from(lhs.layout.shape()),
+            layout: Layout::from(lhs.layout.shape()),
         })
     }
 

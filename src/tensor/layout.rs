@@ -6,7 +6,7 @@ use super::error::TensorError;
 
 /// A description of how to translate between a contiguous memory array and an N-dimension array.
 #[derive(Clone, Debug, PartialEq)]
-pub struct TensorLayout {
+pub struct Layout {
     /// The number of elements in each dimension.
     shape: Vec<usize>,
     /// The number of elements in the memory array that need to be skipped to move to the next
@@ -15,7 +15,7 @@ pub struct TensorLayout {
 }
 
 /// Creates a contiguous layout based on the given shape.
-impl From<Vec<usize>> for TensorLayout {
+impl From<Vec<usize>> for Layout {
     fn from(shape: Vec<usize>) -> Self {
         // Go backwards through the shape to calculate the strides. The last stride is always 1.
         let mut strides = vec![1; shape.len()];
@@ -26,31 +26,37 @@ impl From<Vec<usize>> for TensorLayout {
     }
 }
 
-impl<const N: usize> From<[usize; N]> for TensorLayout {
+impl<const N: usize> From<[usize; N]> for Layout {
     fn from(shape: [usize; N]) -> Self {
-        TensorLayout::from(shape.to_vec())
+        Layout::from(shape.to_vec())
     }
 }
 
-impl<const N: usize> From<&[usize; N]> for TensorLayout {
+impl<const N: usize> From<&[usize; N]> for Layout {
     fn from(shape: &[usize; N]) -> Self {
-        TensorLayout::from(shape.to_vec())
+        Layout::from(shape.to_vec())
     }
 }
 
-impl From<&[usize]> for TensorLayout {
+impl From<&[usize]> for Layout {
     fn from(shape: &[usize]) -> Self {
-        TensorLayout::from(shape.to_vec())
+        Layout::from(shape.to_vec())
     }
 }
 
-impl TensorLayout {
-    /// Returns the layout for a scalar, which has no shape and strides.
-    pub fn scalar() -> Self {
+impl Default for Layout {
+    fn default() -> Self {
         Self {
             shape: Vec::new(),
             strides: Vec::new(),
         }
+    }
+}
+
+impl Layout {
+    /// Returns the layout for a scalar, which has no shape and strides.
+    pub fn scalar() -> Self {
+        Self::default()
     }
 
     /// Returns the shape of a tensor.
@@ -68,9 +74,9 @@ impl TensorLayout {
         self.shape.iter().product()
     }
 
-    /// Returns 2 layouts where the first is the layout of the reduced tensor and the second is the
-    /// reducer layout. The reducer layout is used to map an index in the input tensor to a memory
-    /// position in the reduced tensor.
+    /// Returns 2 layouts where the first is reduced layout and the second is the reducer layout.
+    /// The reducer layout is used to map an index in the input tensor to a memory position in the
+    /// reduced tensor.
     pub fn reduce(&self, dims: &[usize]) -> Result<(Self, Self), TensorError> {
         let mut reduced_shape = self.shape.clone();
         for &d in dims {
@@ -303,7 +309,7 @@ impl TensorLayout {
 
 /// An iterator over a tensor's indices.
 pub struct IndexIterator<'a> {
-    layout: &'a TensorLayout,
+    layout: &'a Layout,
     index: Vec<usize>,
     exhausted: bool,
 }
@@ -328,8 +334,8 @@ impl<'a> Iterator for IndexIterator<'a> {
     }
 }
 
-impl<'a> From<&'a TensorLayout> for IndexIterator<'a> {
-    fn from(layout: &'a TensorLayout) -> Self {
+impl<'a> From<&'a Layout> for IndexIterator<'a> {
+    fn from(layout: &'a Layout) -> Self {
         Self {
             layout,
             index: vec![0; layout.shape.len()],
@@ -340,7 +346,7 @@ impl<'a> From<&'a TensorLayout> for IndexIterator<'a> {
 
 /// An iterator over a tensor's internal buffer positions.
 pub struct PositionIterator<'a> {
-    layout: &'a TensorLayout,
+    layout: &'a Layout,
     index_iterator: IndexIterator<'a>,
 }
 
@@ -354,8 +360,8 @@ impl<'a> Iterator for PositionIterator<'a> {
     }
 }
 
-impl<'a> From<&'a TensorLayout> for PositionIterator<'a> {
-    fn from(layout: &'a TensorLayout) -> Self {
+impl<'a> From<&'a Layout> for PositionIterator<'a> {
+    fn from(layout: &'a Layout) -> Self {
         Self {
             layout,
             index_iterator: IndexIterator::from(layout),

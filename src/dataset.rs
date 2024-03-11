@@ -1,8 +1,8 @@
 //! Data structures and methods for dealing with datasets.
 
-/// A sample input and output data.
+/// A single sample within a dataset of mappings from vectors to vectors.
 #[derive(Debug, Clone)]
-pub struct Sample<const M: usize, const N: usize> {
+pub struct VectorMapping<const M: usize, const N: usize> {
     /// The input data.
     pub input: [f64; M],
     /// The output data.

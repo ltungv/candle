@@ -13,7 +13,7 @@ use std::{
 use rand::{seq::SliceRandom, Rng};
 use rand_distr::Distribution;
 
-use crate::dataset::Sample;
+use crate::dataset::VectorMapping;
 
 #[derive(Debug, Clone)]
 struct Call {
@@ -398,7 +398,7 @@ impl Mlp {
     pub fn train<R, const M: usize, const N: usize>(
         &self,
         rng: &mut R,
-        dataset: &[Sample<M, N>],
+        dataset: &[VectorMapping<M, N>],
         epochs: usize,
         batch_size: usize,
         learning_rate: f64,
@@ -433,7 +433,7 @@ impl Mlp {
 
     fn loss_sample<const M: usize, const N: usize>(
         &self,
-        sample: &Sample<M, N>,
+        sample: &VectorMapping<M, N>,
         metric: fn(&[Var], &[Var]) -> Var,
     ) -> Var {
         let input: Vec<_> = sample.input.iter().map(|x| Var::new(*x)).collect();
@@ -444,7 +444,7 @@ impl Mlp {
 
     fn loss_dataset<const M: usize, const N: usize>(
         &self,
-        samples: &[Sample<M, N>],
+        samples: &[VectorMapping<M, N>],
         metric: fn(&[Var], &[Var]) -> Var,
     ) -> Var {
         let mut loss = Var::new(0.0);

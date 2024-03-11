@@ -1,5 +1,5 @@
 use candle::{
-    dataset::Sample,
+    dataset::VectorMapping,
     scalar::{ad_backward_graph, ad_backward_tape},
 };
 use rand_distr::StandardNormal;
@@ -8,19 +8,19 @@ fn main() {
     let mut rng = rand::thread_rng();
     let distribution = StandardNormal;
     let dataset = vec![
-        Sample {
+        VectorMapping {
             input: [0.0, 0.0],
             output: [0.0],
         },
-        Sample {
+        VectorMapping {
             input: [0.0, 1.0],
             output: [0.0],
         },
-        Sample {
+        VectorMapping {
             input: [1.0, 0.0],
             output: [0.0],
         },
-        Sample {
+        VectorMapping {
             input: [1.0, 1.0],
             output: [1.0],
         },

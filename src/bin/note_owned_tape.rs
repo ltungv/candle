@@ -1,7 +1,7 @@
 use std::time;
 
 use candle::{
-    dataset::Sample,
+    dataset::VectorMapping,
     scalar::ad_backward_tape_owned::{Layer, Mlp, Var},
 };
 use rand::Rng;
@@ -58,7 +58,7 @@ fn main() {
     println!("runtime {}ms", duration.as_millis());
 }
 
-fn dataset_add(count: usize) -> Vec<Sample<2, 1>> {
+fn dataset_add(count: usize) -> Vec<VectorMapping<2, 1>> {
     let dist = StandardNormal;
     let mut rng = rand::thread_rng();
     let mut samples = Vec::with_capacity(count);
@@ -66,7 +66,7 @@ fn dataset_add(count: usize) -> Vec<Sample<2, 1>> {
         let x = rng.sample(dist);
         let y = rng.sample(dist);
         let z = x + y;
-        let sample = Sample {
+        let sample = VectorMapping {
             input: [x, y],
             output: [z],
         };

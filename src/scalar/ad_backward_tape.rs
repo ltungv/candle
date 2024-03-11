@@ -10,7 +10,7 @@ use std::{
 use rand::{seq::SliceRandom, Rng};
 use rand_distr::Distribution;
 
-use crate::dataset::Sample;
+use crate::dataset::VectorMapping;
 
 /// A node in the computation graph holding the index of the nodes it depends on and the gradients
 /// of the output with respect to each of the input.
@@ -374,7 +374,7 @@ impl<'a> Mlp<'a> {
         &mut self,
         tape: &'a Tape,
         rng: &mut R,
-        dataset: &[Sample<M, N>],
+        dataset: &[VectorMapping<M, N>],
         epochs: usize,
         batch_size: usize,
         learning_rate: f64,
@@ -418,7 +418,7 @@ impl<'a> Mlp<'a> {
     fn loss_sample<const M: usize, const N: usize>(
         &self,
         tape: &'a Tape,
-        sample: &Sample<M, N>,
+        sample: &VectorMapping<M, N>,
         metric: fn(&'a Tape, &[Var<'a>], &[Var<'a>]) -> Var<'a>,
     ) -> Var<'a> {
         let input: Vec<_> = sample.input.iter().map(|x| tape.add_variable(*x)).collect();
@@ -434,7 +434,7 @@ impl<'a> Mlp<'a> {
     fn loss_dataset<const M: usize, const N: usize>(
         &self,
         tape: &'a Tape,
-        samples: &[Sample<M, N>],
+        samples: &[VectorMapping<M, N>],
         metric: fn(&'a Tape, &[Var<'a>], &[Var<'a>]) -> Var<'a>,
     ) -> Var<'a> {
         let mut loss = tape.add_variable(0.0);
