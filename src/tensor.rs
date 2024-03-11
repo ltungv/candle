@@ -1,20 +1,18 @@
 //! An N-dimension tensor.
 
-pub mod error;
-pub mod layout;
+mod error;
+mod layout;
 
 use std::{
     ops::{self, Index},
     sync::Arc,
 };
 
+pub use error::Error;
+pub use layout::Layout;
+use layout::PositionIterator;
 use rand::Rng;
 use rand_distr::Distribution;
-
-use self::{
-    error::TensorError,
-    layout::{PositionIterator, Layout},
-};
 
 /// An N-dimension array holding elements row-major order. Tensors are immutable and new ones are
 /// created each time we perform an operation. Tensors' underlying data is shared using reference
@@ -26,7 +24,7 @@ pub struct Tensor {
 }
 
 impl ops::Add for &Tensor {
-    type Output = Result<Tensor, TensorError>;
+    type Output = Result<Tensor, Error>;
 
     fn add(self, rhs: &Tensor) -> Self::Output {
         self.zip(rhs, |x, y| x + y)
@@ -34,23 +32,23 @@ impl ops::Add for &Tensor {
 }
 
 impl ops::Add<Tensor> for &Tensor {
-    type Output = Result<Tensor, TensorError>;
+    type Output = Result<Tensor, Error>;
 
     fn add(self, rhs: Tensor) -> Self::Output {
         self + &rhs
     }
 }
 
-impl ops::Add<Result<Tensor, TensorError>> for &Tensor {
-    type Output = Result<Tensor, TensorError>;
+impl ops::Add<Result<Tensor, Error>> for &Tensor {
+    type Output = Result<Tensor, Error>;
 
-    fn add(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
+    fn add(self, rhs: Result<Tensor, Error>) -> Self::Output {
         rhs.and_then(|rhs| self + &rhs)
     }
 }
 
-impl ops::Add<&Tensor> for Result<Tensor, TensorError> {
-    type Output = Result<Tensor, TensorError>;
+impl ops::Add<&Tensor> for Result<Tensor, Error> {
+    type Output = Result<Tensor, Error>;
 
     fn add(self, rhs: &Tensor) -> Self::Output {
         self.and_then(|lhs| &lhs + rhs)
@@ -58,7 +56,7 @@ impl ops::Add<&Tensor> for Result<Tensor, TensorError> {
 }
 
 impl ops::Mul for &Tensor {
-    type Output = Result<Tensor, TensorError>;
+    type Output = Result<Tensor, Error>;
 
     fn mul(self, rhs: &Tensor) -> Self::Output {
         self.zip(rhs, |x, y| x * y)
@@ -66,23 +64,23 @@ impl ops::Mul for &Tensor {
 }
 
 impl ops::Mul<Tensor> for &Tensor {
-    type Output = Result<Tensor, TensorError>;
+    type Output = Result<Tensor, Error>;
 
     fn mul(self, rhs: Tensor) -> Self::Output {
         self * &rhs
     }
 }
 
-impl ops::Mul<Result<Tensor, TensorError>> for &Tensor {
-    type Output = Result<Tensor, TensorError>;
+impl ops::Mul<Result<Tensor, Error>> for &Tensor {
+    type Output = Result<Tensor, Error>;
 
-    fn mul(self, rhs: Result<Tensor, TensorError>) -> Self::Output {
+    fn mul(self, rhs: Result<Tensor, Error>) -> Self::Output {
         rhs.and_then(|rhs| self * &rhs)
     }
 }
 
-impl ops::Mul<&Tensor> for Result<Tensor, TensorError> {
-    type Output = Result<Tensor, TensorError>;
+impl ops::Mul<&Tensor> for Result<Tensor, Error> {
+    type Output = Result<Tensor, Error>;
 
     fn mul(self, rhs: &Tensor) -> Self::Output {
         self.and_then(|lhs| lhs.zip(rhs, |x, y| x * y))
@@ -181,13 +179,10 @@ impl Tensor {
     }
 
     /// Creates a new tensor using the given data and layout.
-    pub fn shaped(shape: &[usize], data: &[f32]) -> Result<Self, TensorError> {
+    pub fn shaped(shape: &[usize], data: &[f32]) -> Result<Self, Error> {
         let layout = Layout::from(shape);
         if layout.elems() != data.len() {
-            return Err(TensorError::IncompatibleShapes(
-                shape.to_vec(),
-                vec![data.len()],
-            ));
+            return Err(Error::IncompatibleShapes(shape.to_vec(), vec![data.len()]));
         }
         Ok(Self {
             data: Arc::new(data.to_vec()),
@@ -229,13 +224,13 @@ impl Tensor {
     /// + Multiplication by scalars is not allowed, use * instead.
     /// + Stacks of matrices are broadcast together as if the matrices were elements,
     /// respecting the signature (n,k),(k,m)->(n,m)
-    pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+    pub fn matmul(&self, other: &Self) -> Result<Self, Error> {
         let mut lhs_shape = self.layout.shape().to_vec();
         let mut rhs_shape = other.layout.shape().to_vec();
         let orig_lhs_dims = lhs_shape.len();
         let orig_rhs_dims = rhs_shape.len();
         if orig_lhs_dims == 0 || orig_rhs_dims == 0 {
-            return Err(TensorError::IncompatibleShapes(lhs_shape, rhs_shape));
+            return Err(Error::IncompatibleShapes(lhs_shape, rhs_shape));
         }
         // If the LHS dimension is (k), make it (1, k)
         if orig_lhs_dims == 1 {
@@ -246,7 +241,7 @@ impl Tensor {
             rhs_shape.push(1);
         }
         if lhs_shape[lhs_shape.len() - 1] != rhs_shape[rhs_shape.len() - 2] {
-            return Err(TensorError::IncompatibleShapes(lhs_shape, rhs_shape));
+            return Err(Error::IncompatibleShapes(lhs_shape, rhs_shape));
         }
         // Turn (..., m, k) into (..., m, 1, k);
         lhs_shape.insert(lhs_shape.len() - 1, 1);
@@ -275,12 +270,12 @@ impl Tensor {
     }
 
     /// Returns a new tensor reduced along the given dimensions by summing all elements.
-    pub fn sum(&self, dims: &[usize]) -> Result<Tensor, TensorError> {
+    pub fn sum(&self, dims: &[usize]) -> Result<Tensor, Error> {
         self.reduce(dims, 0.0, |x, y| x + y)
     }
 
     /// Returns a new tensor reduced along the given dimensions by multiplying all elements.
-    pub fn prod(&self, dims: &[usize]) -> Result<Tensor, TensorError> {
+    pub fn prod(&self, dims: &[usize]) -> Result<Tensor, Error> {
         self.reduce(dims, 1.0, |x, y| x * y)
     }
 
@@ -303,7 +298,7 @@ impl Tensor {
     /// broadcast when necessary. See [NumPy's broadcasting] for more information.
     ///
     /// [NumPy's broadcasting]: https://numpy.org/doc/stable/user/basics.broadcasting.html
-    pub fn zip<F>(&self, other: &Self, op: F) -> Result<Self, TensorError>
+    pub fn zip<F>(&self, other: &Self, op: F) -> Result<Self, Error>
     where
         F: Fn(&f32, &f32) -> f32,
     {
@@ -323,7 +318,7 @@ impl Tensor {
     /// dimensions. See [NumPy's reduce] for more information.
     ///
     /// [NumPy's reduce]: https://numpy.org/doc/stable/reference/generated/numpy.ufunc.reduce.html#numpy-ufunc-reduce
-    pub fn reduce<F>(&self, dims: &[usize], default: f32, op: F) -> Result<Self, TensorError>
+    pub fn reduce<F>(&self, dims: &[usize], default: f32, op: F) -> Result<Self, Error>
     where
         F: Fn(&f32, &f32) -> f32,
     {
@@ -350,7 +345,7 @@ impl Tensor {
     }
 
     /// Swaps 2 dimensions of the tensor without cloning its data.
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, Error> {
         let layout = self.layout.transpose(dim0, dim1)?;
         Ok(Self {
             data: self.data.clone(),
@@ -359,7 +354,7 @@ impl Tensor {
     }
 
     /// Permutes the tensor dimensions according to the given ordering without cloning its data.
-    pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
+    pub fn permute(&self, permutation: &[usize]) -> Result<Self, Error> {
         let layout = self.layout.permute(permutation)?;
         Ok(Self {
             data: self.data.clone(),
@@ -369,7 +364,7 @@ impl Tensor {
 
     /// Reshapes the tensor to the given shape. This might clone the data if the new shape can't be
     /// represented contiguously basing on the current layout.
-    pub fn reshape(&self, shape: &[usize]) -> Result<Self, TensorError> {
+    pub fn reshape(&self, shape: &[usize]) -> Result<Self, Error> {
         match self.layout.reshape(shape)? {
             Some(layout) => Ok(Self {
                 data: self.data.clone(),
@@ -381,7 +376,7 @@ impl Tensor {
 
     /// Broadcast the tensors and returns their broadcasted versions. See [TensorLayout::broadcast]
     /// for more details.
-    fn broadcast(&self, other: &Self) -> Result<(Self, Self), TensorError> {
+    fn broadcast(&self, other: &Self) -> Result<(Self, Self), Error> {
         let (lhs_layout, rhs_layout) = self.layout.broadcast(&other.layout)?;
         let lhs = Self {
             data: self.data.clone(),

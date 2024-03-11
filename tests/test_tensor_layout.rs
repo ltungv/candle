@@ -1,7 +1,7 @@
-pub mod assert;
+mod assert;
 
 use assert::assert_contiguous_layout;
-use candle::tensor::layout::Layout;
+use candle::tensor::Layout;
 
 use crate::assert::{assert_expanded_layout, assert_reduced_layout};
 

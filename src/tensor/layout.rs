@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use super::error::TensorError;
+use super::error::Error;
 
 /// A description of how to translate between a contiguous memory array and an N-dimension array.
 #[derive(Clone, Debug, PartialEq)]
@@ -77,12 +77,12 @@ impl Layout {
     /// Returns 2 layouts where the first is reduced layout and the second is the reducer layout.
     /// The reducer layout is used to map an index in the input tensor to a memory position in the
     /// reduced tensor.
-    pub fn reduce(&self, dims: &[usize]) -> Result<(Self, Self), TensorError> {
+    pub fn reduce(&self, dims: &[usize]) -> Result<(Self, Self), Error> {
         let mut reduced_shape = self.shape.clone();
-        for &d in dims {
+        for d in dims.iter().copied() {
             if d >= reduced_shape.len() {
-                // Reduced along an out-of-bounds dim.
-                return Err(TensorError::UnknownDimension(d));
+                // Reduced along an out-of-bounds dimension.
+                return Err(Error::UnknownDimension(d));
             }
             reduced_shape[d] = 1;
         }
@@ -102,22 +102,24 @@ impl Layout {
     pub fn squeeze(&self) -> Self {
         let mut shape = Vec::new();
         let mut strides = Vec::new();
-        for (size, stride) in self.shape.iter().zip(self.strides.iter()) {
-            if *size != 1 {
-                shape.push(*size);
-                strides.push(*stride);
+        let shape_iter = self.shape.iter().copied();
+        let strides_iter = self.strides.iter().copied();
+        for (size, stride) in shape_iter.zip(strides_iter) {
+            if size != 1 {
+                shape.push(size);
+                strides.push(stride);
             }
         }
         Self { shape, strides }
     }
 
     /// Returns a new layout where the 2 dimensions are transposed.
-    pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, TensorError> {
+    pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, Error> {
         if dim0 >= self.shape.len() {
-            return Err(TensorError::UnknownDimension(dim0));
+            return Err(Error::UnknownDimension(dim0));
         }
         if dim1 >= self.shape.len() {
-            return Err(TensorError::UnknownDimension(dim1));
+            return Err(Error::UnknownDimension(dim1));
         }
         let mut shape = self.shape.clone();
         let mut strides = self.strides.clone();
@@ -127,13 +129,13 @@ impl Layout {
     }
 
     /// Returns a new layout where the dimensions are permuted.
-    pub fn permute(&self, permutation: &[usize]) -> Result<Self, TensorError> {
+    pub fn permute(&self, permutation: &[usize]) -> Result<Self, Error> {
         let mut sum_dim = 0;
         let mut shape = Vec::with_capacity(self.shape.len());
         let mut strides = Vec::with_capacity(self.strides.len());
         for &d in permutation {
             if d >= self.shape.len() {
-                return Err(TensorError::UnknownDimension(d));
+                return Err(Error::UnknownDimension(d));
             }
             sum_dim += d;
             shape.push(self.shape[d]);
@@ -141,36 +143,37 @@ impl Layout {
         }
         let num_dims = permutation.len();
         if num_dims * (num_dims - 1) / 2 != sum_dim {
-            return Err(TensorError::Custom(
+            return Err(Error::Custom(
                 "Each dimension must be specified exactly once.".to_string(),
             ));
         }
         Ok(Self { shape, strides })
     }
 
-    /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size. See
-    /// [broadcasting rule] for more details.
+    /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
     ///
-    /// Tensor can be also expanded to a larger number of dimensions, and the new ones will be
+    /// Tensor can also be expanded to a larger number of dimensions, and the new ones will be
     /// appended at the front. For the new dimensions, the size cannot be set to -1.
     ///
     /// Expanding a tensor does not allocate new memory, but only creates a new view on the
-    /// existing existing tensor where a dimension of size one is expanded to a larger size by
-    /// setting the stride to 0. Any dimension of size 1 can be expanded to an arbitrary value
-    /// without allocating new memory.
-    ///
-    /// [broadcasting rule]: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
-    pub fn expand(&self, new_shape: &[usize]) -> Result<Self, TensorError> {
+    /// existing tensor where a dimension of size one is expanded to a larger size by setting
+    /// the stride to 0. Any dimension of size 1 can be expanded to an arbitrary value without
+    /// allocating new memory.
+    pub fn expand(&self, new_shape: &[usize]) -> Result<Self, Error> {
         let mut new_strides = vec![0; new_shape.len()];
-        let new_dim = new_shape.iter().zip(new_strides.iter_mut()).rev();
-        let old_dim = self.shape.iter().zip(self.strides.iter()).rev();
+        let new_shape_iter = new_shape.iter().copied();
+        let new_strides_iter = new_strides.iter_mut();
+        let old_shape_iter = self.shape.iter().copied();
+        let old_strides_iter = self.strides.iter().copied();
+        let new_dim = new_shape_iter.zip(new_strides_iter).rev();
+        let old_dim = old_shape_iter.zip(old_strides_iter).rev();
         for ((new_size, new_stride), (old_size, old_stride)) in new_dim.zip(old_dim) {
             if old_size == new_size {
-                *new_stride = *old_stride;
-            } else if *old_size == 1 {
+                *new_stride = old_stride;
+            } else if old_size == 1 {
                 *new_stride = 0;
             } else {
-                return Err(TensorError::IncompatibleShapes(
+                return Err(Error::IncompatibleShapes(
                     self.shape.clone(),
                     new_shape.to_vec(),
                 ));
@@ -183,29 +186,30 @@ impl Layout {
     }
 
     /// Performs broadcasting on the 2 layouts and returns their broadcasted versions.
-    pub fn broadcast(&self, other: &Self) -> Result<(Self, Self), TensorError> {
+    /// See [broadcasting rule] for more details.
+    ///
+    /// [broadcasting rule]: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
+    pub fn broadcast(&self, other: &Self) -> Result<(Self, Self), Error> {
+        // Determine which shape has more dimensions.
         let (small, large) = if self.shape.len() < other.shape.len() {
             (self.shape(), other.shape())
         } else {
             (other.shape(), self.shape())
         };
+        // Zipping the 2 shapes in reverse order while filling in 1 for the missing dimensions.
         let mut broadcasted_shape = Vec::with_capacity(large.len());
-        // Zipping the 2 shapes in reverse order while filling in 1 for the missing dimensions
-        for sizes in small
-            .iter()
-            .rev()
-            .chain(iter::once(&1usize).cycle())
-            .zip(large.iter().rev())
-        {
+        let small_iter = small.iter().copied().rev().chain(iter::once(1).cycle());
+        let large_iter = large.iter().copied().rev();
+        for sizes in small_iter.zip(large_iter) {
             match sizes {
                 // Broadcasted shape is the same as the larger shape
-                (1, d) => broadcasted_shape.push(*d),
+                (1, d) => broadcasted_shape.push(d),
                 // Broadcasted shape is the same as the smaller shape
-                (d, 1) => broadcasted_shape.push(*d),
+                (d, 1) => broadcasted_shape.push(d),
                 // The dimensions are equals
-                (dx, dy) if dx == dy => broadcasted_shape.push(*dx),
+                (d, dd) if d == dd => broadcasted_shape.push(d),
                 _ => {
-                    return Err(TensorError::IncompatibleShapes(
+                    return Err(Error::IncompatibleShapes(
                         small.to_vec(),
                         large.to_vec(),
                     ))
@@ -221,9 +225,9 @@ impl Layout {
     /// Returns a new layout for a tensor having the same number of elements
     /// but with a different shape. This function returns an error if the new
     /// layout can't be accommodated without copying data.
-    pub fn reshape(&self, new_shape: &[usize]) -> Result<Option<Self>, TensorError> {
+    pub fn reshape(&self, new_shape: &[usize]) -> Result<Option<Self>, Error> {
         if self.elems() != new_shape.iter().product() {
-            return Err(TensorError::IncompatibleShapes(
+            return Err(Error::IncompatibleShapes(
                 self.shape.clone(),
                 new_shape.to_vec(),
             ));

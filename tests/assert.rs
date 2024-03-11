@@ -1,4 +1,4 @@
-use candle::tensor::{layout::Layout, Tensor};
+use candle::tensor::{Layout, Tensor};
 
 pub fn assert_contiguous_layout(layout: &Layout, shape: &[usize]) {
     let expected = Layout::from(shape);

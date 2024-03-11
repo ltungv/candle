@@ -1,4 +1,4 @@
-pub mod assert;
+mod assert;
 
 use std::f32::consts::PI;
 
