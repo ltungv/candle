@@ -1,4 +1,3 @@
-# Candle
+# Candle, a small torch!
 
-A torch, bit not quite!
-This repository contains data structures and algorithms for ML/AI.
+This repository contains random data structures and algorithms used in ML/AI. This is for educational purposes and meant for exploring the internals of these data structures and algorithms.
