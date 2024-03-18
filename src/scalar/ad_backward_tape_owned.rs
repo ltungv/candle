@@ -44,7 +44,7 @@ impl Var {
     pub fn new(value: f64) -> Self {
         static ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let id = ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Var {
+        Self {
             id,
             value,
             tape: None,
@@ -52,6 +52,7 @@ impl Var {
     }
 
     /// Clone the variable with a new tape containing only itself.
+    #[must_use]
     pub fn trace(&self) -> Self {
         let mut tape = Tape::default();
         tape.nodes.insert(
@@ -61,7 +62,7 @@ impl Var {
                 grad: [0.0, 0.0],
             },
         );
-        Var {
+        Self {
             id: self.id,
             value: self.value,
             tape: Some(tape),
@@ -69,6 +70,7 @@ impl Var {
     }
 
     /// Returns the gradient of the variable with respect to all variables in the tape.
+    #[must_use]
     pub fn gradients(mut self) -> Option<BTreeMap<usize, f64>> {
         self.tape.take().map(|tape| {
             let mut gradients = BTreeMap::new();
@@ -94,6 +96,7 @@ impl Var {
     }
 
     /// Create a new variable using the same value as the current one.
+    #[must_use]
     pub fn identity(self) -> Self {
         match self.tape {
             Some(mut tape) => {
@@ -113,6 +116,7 @@ impl Var {
     }
 
     /// Create a new variable using the sigmoid of the current value.
+    #[must_use]
     pub fn sigmoid(self) -> Self {
         let exp = self.value.exp();
         let value = exp / (1.0 + exp);
@@ -133,7 +137,7 @@ impl Var {
         }
     }
 
-    fn merge_tapes(mut self, mut other: Self) -> (Option<Tape>, Var, Var) {
+    fn merge_tapes(mut self, mut other: Self) -> (Option<Tape>, Self, Self) {
         let lhs_tape = self.tape.take();
         let rhs_tape = other.tape.take();
         let tape = if self.id == other.id {
@@ -150,8 +154,7 @@ impl Var {
                         Some(tr)
                     }
                 }
-                (Some(t), None) => Some(t),
-                (None, Some(t)) => Some(t),
+                (Some(t), None) | (None, Some(t)) => Some(t),
                 (None, None) => None,
             }
         };
@@ -160,7 +163,7 @@ impl Var {
 }
 
 impl Add for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
         let (tape, lhs, rhs) = self.merge_tapes(other);
@@ -178,7 +181,7 @@ impl Add for Var {
 }
 
 impl Sub for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
         let (tape, lhs, rhs) = self.merge_tapes(other);
@@ -196,7 +199,7 @@ impl Sub for Var {
 }
 
 impl Mul for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
         let (tape, lhs, rhs) = self.merge_tapes(other);
@@ -214,7 +217,7 @@ impl Mul for Var {
 }
 
 impl Div for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn div(self, other: Self) -> Self::Output {
         let (tape, lhs, rhs) = self.merge_tapes(other);
@@ -329,6 +332,7 @@ impl Layer {
     }
 
     /// Applies the layer to the given input.
+    #[must_use]
     pub fn forward(&self, input: &[Var]) -> Vec<Var> {
         self.neurons
             .iter()
@@ -345,12 +349,14 @@ impl Layer {
 }
 
 /// A multi-layer perceptron holding a set of layers.
+#[derive(Debug)]
 pub struct Mlp {
     layers: Vec<Layer>,
 }
 
 impl Mlp {
     /// Create a new f32 MLP with the given list of layers.
+    #[must_use]
     pub fn new(layers: Vec<Layer>) -> Self {
         Self { layers }
     }
@@ -366,6 +372,7 @@ impl Mlp {
     }
 
     /// Applies the MLP to the given input.
+    #[must_use]
     pub fn forward(&self, input: &[Var]) -> Vec<Var> {
         match self.layers.split_first() {
             Some((layer, ls)) => ls
@@ -376,6 +383,10 @@ impl Mlp {
     }
 
     /// Train the MLP on the given dataset.
+    ///
+    /// # Panics
+    ///
+    /// Panics in case there's an internal error.
     #[allow(clippy::too_many_arguments)]
     pub fn train<R, const M: usize, const N: usize>(
         &mut self,
@@ -394,9 +405,11 @@ impl Mlp {
             dataset.shuffle(rng);
             for batch in dataset.chunks(batch_size) {
                 let loss = self.loss_dataset(batch, mse);
-                let gradients = loss.gradients().unwrap();
+                let gradients = loss.gradients().expect("loss variable should be traced");
                 for param in self.parameters_mut() {
-                    let grad = gradients.get(&param.id).unwrap();
+                    let grad = gradients
+                        .get(&param.id)
+                        .expect("parameter should be traced");
                     param.value -= grad * learning_rate;
                 }
             }
@@ -405,7 +418,7 @@ impl Mlp {
                 println!("epoch: {}, loss: {}", epoch + 1, loss.value);
             }
         }
-        let duration = time::Instant::now() - start;
+        let duration = start.elapsed();
         println!("training took {}ms", duration.as_millis());
     }
 
@@ -418,7 +431,8 @@ impl Mlp {
         for sample in samples {
             loss = loss + self.loss_sample(sample, metric);
         }
-        loss / Var::new(samples.len() as f64)
+        let count = u32::try_from(samples.len()).unwrap();
+        loss / Var::new(f64::from(count))
     }
 
     fn loss_sample<const M: usize, const N: usize>(
@@ -442,7 +456,8 @@ impl Mlp {
 
 fn mse(pred: Vec<Var>, output: Vec<Var>) -> Var {
     let mut loss = Var::new(0.0);
-    let n = Var::new(output.len() as f64);
+    let count = u32::try_from(output.len()).unwrap();
+    let n = Var::new(f64::from(count));
     for (p, o) in pred.into_iter().zip(output.into_iter()) {
         let diff = p - o;
         loss = loss + diff.clone() * diff;

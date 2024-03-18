@@ -18,9 +18,9 @@ impl error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::IncompatibleShapes(l, r) => write!(f, "Incompatible shapes {:?} and {:?}.", l, r),
-            Self::UnknownDimension(d) => write!(f, "Unknown dimension {}.", d),
-            Self::Custom(s) => write!(f, "{}", s),
+            Self::IncompatibleShapes(l, r) => write!(f, "Incompatible shapes {l:?} and {r:?}."),
+            Self::UnknownDimension(d) => write!(f, "Unknown dimension {d}."),
+            Self::Custom(s) => write!(f, "{s}"),
         }
     }
 }

@@ -5,7 +5,7 @@ use std::iter;
 use super::error::Error;
 
 /// A description of how to translate between a contiguous memory array and an N-dimension array.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Layout {
     /// The number of elements in each dimension.
     shape: Vec<usize>,
@@ -28,48 +28,43 @@ impl From<Vec<usize>> for Layout {
 
 impl<const N: usize> From<[usize; N]> for Layout {
     fn from(shape: [usize; N]) -> Self {
-        Layout::from(shape.to_vec())
+        Self::from(shape.to_vec())
     }
 }
 
 impl<const N: usize> From<&[usize; N]> for Layout {
     fn from(shape: &[usize; N]) -> Self {
-        Layout::from(shape.to_vec())
+        Self::from(shape.to_vec())
     }
 }
 
 impl From<&[usize]> for Layout {
     fn from(shape: &[usize]) -> Self {
-        Layout::from(shape.to_vec())
-    }
-}
-
-impl Default for Layout {
-    fn default() -> Self {
-        Self {
-            shape: Vec::new(),
-            strides: Vec::new(),
-        }
+        Self::from(shape.to_vec())
     }
 }
 
 impl Layout {
     /// Returns the layout for a scalar, which has no shape and strides.
+    #[must_use]
     pub fn scalar() -> Self {
         Self::default()
     }
 
     /// Returns the shape of a tensor.
+    #[must_use]
     pub fn shape(&self) -> &[usize] {
         self.shape.as_slice()
     }
 
     /// Returns the strides of a tensor.
+    #[must_use]
     pub fn strides(&self) -> &[usize] {
         self.strides.as_slice()
     }
 
     /// Returns the number of elements in a tensor.
+    #[must_use]
     pub fn elems(&self) -> usize {
         self.shape.iter().product()
     }
@@ -77,6 +72,10 @@ impl Layout {
     /// Returns 2 layouts where the first is reduced layout and the second is the reducer layout.
     /// The reducer layout is used to map an index in the input tensor to a memory position in the
     /// reduced tensor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one of the dimensions to reduce is invalid.
     pub fn reduce(&self, dims: &[usize]) -> Result<(Self, Self), Error> {
         let mut reduced_shape = self.shape.clone();
         for d in dims.iter().copied() {
@@ -99,6 +98,7 @@ impl Layout {
     }
 
     /// Returns a new layout where all singleton dimensions are removed.
+    #[must_use]
     pub fn squeeze(&self) -> Self {
         let mut shape = Vec::new();
         let mut strides = Vec::new();
@@ -114,6 +114,10 @@ impl Layout {
     }
 
     /// Returns a new layout where the 2 dimensions are transposed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one of the dimensions is invalid.
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, Error> {
         if dim0 >= self.shape.len() {
             return Err(Error::UnknownDimension(dim0));
@@ -129,6 +133,10 @@ impl Layout {
     }
 
     /// Returns a new layout where the dimensions are permuted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one of the dimensions is invalid.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, Error> {
         let mut sum_dim = 0;
         let mut shape = Vec::with_capacity(self.shape.len());
@@ -159,6 +167,10 @@ impl Layout {
     /// existing tensor where a dimension of size one is expanded to a larger size by setting
     /// the stride to 0. Any dimension of size 1 can be expanded to an arbitrary value without
     /// allocating new memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the layout cannot be expanded to the new shape.
     pub fn expand(&self, new_shape: &[usize]) -> Result<Self, Error> {
         let mut new_strides = vec![0; new_shape.len()];
         let new_shape_iter = new_shape.iter().copied();
@@ -189,6 +201,10 @@ impl Layout {
     /// See [broadcasting rule] for more details.
     ///
     /// [broadcasting rule]: https://numpy.org/doc/stable/user/basics.broadcasting.html#general-broadcasting-rules
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the shapes are incompatible for broadcasting.
     pub fn broadcast(&self, other: &Self) -> Result<(Self, Self), Error> {
         // Determine which shape has more dimensions.
         let (small, large) = if self.shape.len() < other.shape.len() {
@@ -203,17 +219,10 @@ impl Layout {
         for sizes in small_iter.zip(large_iter) {
             match sizes {
                 // Broadcasted shape is the same as the larger shape
-                (1, d) => broadcasted_shape.push(d),
-                // Broadcasted shape is the same as the smaller shape
-                (d, 1) => broadcasted_shape.push(d),
+                (d, 1) | (1, d) => broadcasted_shape.push(d),
                 // The dimensions are equals
                 (d, dd) if d == dd => broadcasted_shape.push(d),
-                _ => {
-                    return Err(Error::IncompatibleShapes(
-                        small.to_vec(),
-                        large.to_vec(),
-                    ))
-                }
+                _ => return Err(Error::IncompatibleShapes(small.to_vec(), large.to_vec())),
             }
         }
         broadcasted_shape.reverse();
@@ -225,6 +234,10 @@ impl Layout {
     /// Returns a new layout for a tensor having the same number of elements
     /// but with a different shape. This function returns an error if the new
     /// layout can't be accommodated without copying data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the new shape is incompatible with the layout.
     pub fn reshape(&self, new_shape: &[usize]) -> Result<Option<Self>, Error> {
         if self.elems() != new_shape.iter().product() {
             return Err(Error::IncompatibleShapes(
@@ -281,6 +294,7 @@ impl Layout {
     }
 
     /// Translates a tensor index into a position in the data buffer.
+    #[must_use]
     pub fn index_to_position(&self, index: &[usize]) -> usize {
         index
             .iter()
@@ -290,6 +304,7 @@ impl Layout {
     }
 
     /// Translates a position in the data buffer into a tensor index.
+    #[must_use]
     pub fn position_to_index(&self, position: usize) -> Vec<usize> {
         let mut index = Vec::with_capacity(self.shape.len());
         let mut remainder = position;
@@ -301,17 +316,20 @@ impl Layout {
     }
 
     /// Returns an iterator over the indices of a tensor.
+    #[must_use]
     pub fn iter_index(&self) -> IndexIterator<'_> {
         IndexIterator::from(self)
     }
 
     /// Returns an iterator over the internal buffer positions of a tensor.
+    #[must_use]
     pub fn iter_position(&self) -> PositionIterator<'_> {
         PositionIterator::from(self)
     }
 }
 
 /// An iterator over a tensor's indices.
+#[derive(Debug)]
 pub struct IndexIterator<'a> {
     layout: &'a Layout,
     index: Vec<usize>,
@@ -349,6 +367,7 @@ impl<'a> From<&'a Layout> for IndexIterator<'a> {
 }
 
 /// An iterator over a tensor's internal buffer positions.
+#[derive(Debug)]
 pub struct PositionIterator<'a> {
     layout: &'a Layout,
     index_iterator: IndexIterator<'a>,

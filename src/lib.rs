@@ -1,12 +1,5 @@
 //! Implementations of various machine learning data structures and algorithms.
 
-#![warn(
-    clippy::cargo,
-    clippy::nursery,
-    clippy::pedantic,
-    missing_debug_implementations,
-    rustdoc::all
-)]
 #![deny(
     clippy::all,
     missing_docs,
@@ -14,6 +7,14 @@
     rust_2021_compatibility,
     unsafe_code
 )]
+#![warn(
+    clippy::cargo,
+    clippy::nursery,
+    clippy::pedantic,
+    missing_debug_implementations,
+    rustdoc::all
+)]
+#![allow(clippy::similar_names)]
 
 pub mod dataset;
 pub mod scalar;

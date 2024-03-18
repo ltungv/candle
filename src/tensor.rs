@@ -48,7 +48,7 @@ impl ops::Add<Result<Tensor, Error>> for &Tensor {
 }
 
 impl ops::Add<&Tensor> for Result<Tensor, Error> {
-    type Output = Result<Tensor, Error>;
+    type Output = Self;
 
     fn add(self, rhs: &Tensor) -> Self::Output {
         self.and_then(|lhs| &lhs + rhs)
@@ -80,7 +80,7 @@ impl ops::Mul<Result<Tensor, Error>> for &Tensor {
 }
 
 impl ops::Mul<&Tensor> for Result<Tensor, Error> {
-    type Output = Result<Tensor, Error>;
+    type Output = Self;
 
     fn mul(self, rhs: &Tensor) -> Self::Output {
         self.and_then(|lhs| lhs.zip(rhs, |x, y| x * y))
@@ -99,19 +99,19 @@ impl From<Vec<f32>> for Tensor {
 
 impl<const N: usize> From<[f32; N]> for Tensor {
     fn from(data: [f32; N]) -> Self {
-        Tensor::from(data.to_vec())
+        Self::from(data.to_vec())
     }
 }
 
 impl<const N: usize> From<&[f32; N]> for Tensor {
     fn from(data: &[f32; N]) -> Self {
-        Tensor::from(data.to_vec())
+        Self::from(data.to_vec())
     }
 }
 
 impl From<&[f32]> for Tensor {
     fn from(data: &[f32]) -> Self {
-        Tensor::from(data.to_vec())
+        Self::from(data.to_vec())
     }
 }
 
@@ -159,7 +159,7 @@ impl<const N: usize> Index<&[usize; N]> for &Tensor {
 impl<'a> IntoIterator for &'a Tensor {
     type Item = &'a f32;
 
-    type IntoIter = TensorRowIter<'a>;
+    type IntoIter = RowIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         Self::IntoIter {
@@ -171,6 +171,7 @@ impl<'a> IntoIterator for &'a Tensor {
 
 impl Tensor {
     /// Creates a new tensor holding a scalar.
+    #[must_use]
     pub fn scalar(x: f32) -> Self {
         Self {
             data: Arc::new(vec![x]),
@@ -179,6 +180,10 @@ impl Tensor {
     }
 
     /// Creates a new tensor using the given data and layout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the layout and data are incompatible.
     pub fn shaped(shape: &[usize], data: &[f32]) -> Result<Self, Error> {
         let layout = Layout::from(shape);
         if layout.elems() != data.len() {
@@ -205,7 +210,8 @@ impl Tensor {
     }
 
     /// Returns the layout of this tensor.
-    pub fn layout(&self) -> &Layout {
+    #[must_use]
+    pub const fn layout(&self) -> &Layout {
         &self.layout
     }
 
@@ -224,6 +230,10 @@ impl Tensor {
     /// + Multiplication by scalars is not allowed, use * instead.
     /// + Stacks of matrices are broadcast together as if the matrices were elements,
     /// respecting the signature (n,k),(k,m)->(n,m)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the shapes of the tensors are incompatible.
     pub fn matmul(&self, other: &Self) -> Result<Self, Error> {
         let mut lhs_shape = self.layout.shape().to_vec();
         let mut rhs_shape = other.layout.shape().to_vec();
@@ -270,22 +280,31 @@ impl Tensor {
     }
 
     /// Returns a new tensor reduced along the given dimensions by summing all elements.
-    pub fn sum(&self, dims: &[usize]) -> Result<Tensor, Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one of the dimensions is invalid.
+    pub fn sum(&self, dims: &[usize]) -> Result<Self, Error> {
         self.reduce(dims, 0.0, |x, y| x + y)
     }
 
     /// Returns a new tensor reduced along the given dimensions by multiplying all elements.
-    pub fn prod(&self, dims: &[usize]) -> Result<Tensor, Error> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one of the dimensions is invalid.
+    pub fn prod(&self, dims: &[usize]) -> Result<Self, Error> {
         self.reduce(dims, 1.0, |x, y| x * y)
     }
 
     /// Applies the unary function `op` to all elements in the tensor.
+    #[must_use]
     pub fn map<F>(&self, op: F) -> Self
     where
         F: Fn(&f32) -> f32,
     {
         let mut res = Vec::with_capacity(self.layout.elems());
-        for x in self.into_iter() {
+        for x in self {
             res.push(op(x));
         }
         Self {
@@ -298,6 +317,10 @@ impl Tensor {
     /// broadcast when necessary. See [NumPy's broadcasting] for more information.
     ///
     /// [NumPy's broadcasting]: https://numpy.org/doc/stable/user/basics.broadcasting.html
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tensors cannot be broadcasted.
     pub fn zip<F>(&self, other: &Self, op: F) -> Result<Self, Error>
     where
         F: Fn(&f32, &f32) -> f32,
@@ -318,6 +341,10 @@ impl Tensor {
     /// dimensions. See [NumPy's reduce] for more information.
     ///
     /// [NumPy's reduce]: https://numpy.org/doc/stable/reference/generated/numpy.ufunc.reduce.html#numpy-ufunc-reduce
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one of the dimensions is invalid.
     pub fn reduce<F>(&self, dims: &[usize], default: f32, op: F) -> Result<Self, Error>
     where
         F: Fn(&f32, &f32) -> f32,
@@ -336,6 +363,7 @@ impl Tensor {
     }
 
     /// Removes all singleton dimensions from the tensor.
+    #[must_use]
     pub fn squeeze(&self) -> Self {
         let layout = self.layout.squeeze();
         Self {
@@ -345,6 +373,10 @@ impl Tensor {
     }
 
     /// Swaps 2 dimensions of the tensor without cloning its data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if one of the dimensions is invalid.
     pub fn transpose(&self, dim0: usize, dim1: usize) -> Result<Self, Error> {
         let layout = self.layout.transpose(dim0, dim1)?;
         Ok(Self {
@@ -354,6 +386,10 @@ impl Tensor {
     }
 
     /// Permutes the tensor dimensions according to the given ordering without cloning its data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the permutation contains an invalid dimension.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, Error> {
         let layout = self.layout.permute(permutation)?;
         Ok(Self {
@@ -364,17 +400,29 @@ impl Tensor {
 
     /// Reshapes the tensor to the given shape. This might clone the data if the new shape can't be
     /// represented contiguously basing on the current layout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the new shape is incompatible with the current layout.
     pub fn reshape(&self, shape: &[usize]) -> Result<Self, Error> {
-        match self.layout.reshape(shape)? {
-            Some(layout) => Ok(Self {
-                data: self.data.clone(),
-                layout,
-            }),
-            None => Self::from(self.data.as_ref().clone()).reshape(shape),
-        }
+        self.layout.reshape(shape)?.map_or_else(
+            || Self::from(self.data.as_ref().clone()).reshape(shape),
+            |layout| {
+                Ok(Self {
+                    data: self.data.clone(),
+                    layout,
+                })
+            },
+        )
     }
 
-    /// Broadcast the tensors and returns their broadcasted versions. See [TensorLayout::broadcast]
+    /// Returns a row-wise iterator over all elements in the tensor.
+    #[must_use]
+    pub fn iter(&self) -> RowIter<'_> {
+        self.into_iter()
+    }
+
+    /// Broadcast the tensors and returns their broadcasted versions. See [`TensorLayout::broadcast`]
     /// for more details.
     fn broadcast(&self, other: &Self) -> Result<(Self, Self), Error> {
         let (lhs_layout, rhs_layout) = self.layout.broadcast(&other.layout)?;
@@ -391,12 +439,13 @@ impl Tensor {
 }
 
 /// A row-major iterator over a tensor.
-pub struct TensorRowIter<'a> {
+#[derive(Debug)]
+pub struct RowIter<'a> {
     tensor: &'a Tensor,
     position_iterator: PositionIterator<'a>,
 }
 
-impl<'a> Iterator for TensorRowIter<'a> {
+impl<'a> Iterator for RowIter<'a> {
     type Item = &'a f32;
 
     fn next(&mut self) -> Option<Self::Item> {

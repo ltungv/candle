@@ -1,4 +1,4 @@
-mod assert;
+pub mod assert;
 
 use assert::assert_contiguous_layout;
 use candle::tensor::Layout;

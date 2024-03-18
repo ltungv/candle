@@ -211,6 +211,7 @@ impl<'ctx> Div for &Var<'ctx> {
 
 impl<'ctx> Var<'ctx> {
     /// Returns the gradient of the variable with respect to all variables in the tape.
+    #[must_use]
     pub fn gradients(&self) -> Vec<f64> {
         let mut gradients = vec![0.0; self.tape.len()];
         gradients[self.index] = 1.0;
@@ -222,7 +223,8 @@ impl<'ctx> Var<'ctx> {
     }
 
     /// Returns the value of the variable.
-    pub fn value(&self) -> f64 {
+    #[must_use]
+    pub const fn value(&self) -> f64 {
         self.value
     }
 
@@ -233,6 +235,7 @@ impl<'ctx> Var<'ctx> {
     }
 
     /// Create a new variable using the same value as the current one.
+    #[must_use]
     pub fn identity(&self) -> Self {
         Var {
             value: self.value,
@@ -242,6 +245,7 @@ impl<'ctx> Var<'ctx> {
     }
 
     /// Create a new variable using the sigmoid of the current value.
+    #[must_use]
     pub fn sigmoid(&self) -> Self {
         let exp = self.value.exp();
         let value = exp / (1.0 + exp);
@@ -256,6 +260,7 @@ impl<'ctx> Var<'ctx> {
 }
 
 /// A neuron holding a set of weights and a bias.
+#[derive(Debug)]
 struct Neuron<'a> {
     bias: Var<'a>,
     weights: Vec<Var<'a>>,
@@ -305,6 +310,7 @@ impl<'a> Neuron<'a> {
 }
 
 /// A layer of neurons.
+#[derive(Debug)]
 pub struct Layer<'a> {
     neurons: Vec<Neuron<'a>>,
 }
@@ -331,6 +337,7 @@ impl<'a> Layer<'a> {
     }
 
     /// Applies the layer to the given input.
+    #[must_use]
     pub fn forward(&self, input: &[Var<'a>]) -> Vec<Var<'a>> {
         self.neurons
             .iter()
@@ -348,17 +355,20 @@ impl<'a> Layer<'a> {
 }
 
 /// A multi-layer perceptron holding a set of layers.
+#[derive(Debug)]
 pub struct Mlp<'a> {
     layers: Vec<Layer<'a>>,
 }
 
 impl<'a> Mlp<'a> {
     /// Create a new f32 MLP with the given list of layers.
+    #[must_use]
     pub fn new(layers: Vec<Layer<'a>>) -> Self {
         Self { layers }
     }
 
     /// Applies the MLP to the given input.
+    #[must_use]
     pub fn forward(&self, input: &[Var<'a>]) -> Vec<Var<'a>> {
         match self.layers.split_first() {
             Some((layer, ls)) => ls
@@ -403,7 +413,7 @@ impl<'a> Mlp<'a> {
                 println!("epoch: {}, loss: {}", epoch + 1, loss.value);
             }
         }
-        let duration = time::Instant::now() - start;
+        let duration = start.elapsed();
         println!("training took {}ms", duration.as_millis());
     }
 
@@ -441,7 +451,8 @@ impl<'a> Mlp<'a> {
         for sample in samples {
             loss = loss + self.loss_sample(tape, sample, metric);
         }
-        loss / tape.add_variable(samples.len() as f64)
+        let count = u32::try_from(samples.len()).unwrap();
+        loss / tape.add_variable(f64::from(count))
     }
 }
 
@@ -451,5 +462,6 @@ fn mse<'a>(tape: &'a Tape, pred: &[Var<'a>], output: &[Var<'a>]) -> Var<'a> {
         let diff = p - o;
         loss = loss + diff * diff;
     }
-    loss / tape.add_variable(output.len() as f64)
+    let count = u32::try_from(output.len()).unwrap();
+    loss / tape.add_variable(f64::from(count))
 }

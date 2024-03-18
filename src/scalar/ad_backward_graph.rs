@@ -48,15 +48,15 @@ impl Hash for Var {
 }
 
 impl Add for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         let value = self.inner.borrow().value + rhs.inner.borrow().value;
         let call = Call {
-            from: [Some(self.clone()), Some(rhs.clone())],
+            from: [Some(self), Some(rhs)],
             grad: [1.0, 1.0],
         };
-        Var::from_call(value, call)
+        Self::from_call(value, call)
     }
 }
 
@@ -74,15 +74,15 @@ impl Add for &Var {
 }
 
 impl Sub for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         let value = self.inner.borrow().value - rhs.inner.borrow().value;
         let call = Call {
-            from: [Some(self.clone()), Some(rhs.clone())],
+            from: [Some(self), Some(rhs)],
             grad: [1.0, -1.0],
         };
-        Var::from_call(value, call)
+        Self::from_call(value, call)
     }
 }
 
@@ -100,17 +100,17 @@ impl Sub for &Var {
 }
 
 impl Mul for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
         let lhs_value = self.inner.borrow().value;
         let rhs_value = rhs.inner.borrow().value;
         let value = lhs_value * rhs_value;
         let call = Call {
-            from: [Some(self.clone()), Some(rhs.clone())],
+            from: [Some(self), Some(rhs)],
             grad: [rhs_value, lhs_value],
         };
-        Var::from_call(value, call)
+        Self::from_call(value, call)
     }
 }
 
@@ -130,17 +130,17 @@ impl Mul for &Var {
 }
 
 impl Div for Var {
-    type Output = Var;
+    type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
         let lhs_value = self.inner.borrow().value;
         let rhs_value = rhs.inner.borrow().value;
         let value = lhs_value / rhs_value;
         let call = Call {
-            from: [Some(self.clone()), Some(rhs.clone())],
+            from: [Some(self), Some(rhs)],
             grad: [1.0 / rhs_value, -lhs_value / (rhs_value * rhs_value)],
         };
-        Var::from_call(value, call)
+        Self::from_call(value, call)
     }
 }
 
@@ -160,7 +160,7 @@ impl Div for &Var {
 }
 
 impl IntoIterator for Var {
-    type Item = Var;
+    type Item = Self;
     type IntoIter = VarIterator;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -179,6 +179,7 @@ impl IntoIterator for &Var {
 
 impl Var {
     /// Creates a new variable with the given value.
+    #[must_use]
     pub fn new(value: f64) -> Self {
         let call = Call {
             from: [None, None],
@@ -188,11 +189,13 @@ impl Var {
     }
 
     /// Gets the value of the variable.
+    #[must_use]
     pub fn value(&self) -> f64 {
         self.inner.borrow().value
     }
 
     /// Gets the gradient of the variable.
+    #[must_use]
     pub fn grad(&self) -> f64 {
         self.inner.borrow().grad
     }
@@ -214,16 +217,18 @@ impl Var {
     }
 
     /// Returns a new variable with the same value as this variable.
+    #[must_use]
     pub fn identity(&self) -> Self {
         let value = self.inner.borrow().value;
         let call = Call {
             from: [Some(self.clone()), None],
             grad: [1.0, 0.0],
         };
-        Var::from_call(value, call)
+        Self::from_call(value, call)
     }
 
     /// Returns a new variable with the sigmoid of this variable.
+    #[must_use]
     pub fn sigmoid(&self) -> Self {
         let exp = self.inner.borrow().value.exp();
         let value = exp / (1.0 + exp);
@@ -231,7 +236,13 @@ impl Var {
             from: [Some(self.clone()), None],
             grad: [value * (1.0 - value), 0.0],
         };
-        Var::from_call(value, call)
+        Self::from_call(value, call)
+    }
+
+    /// Returns an iterator over all variables used in the computation graph that produces this variable.
+    #[must_use]
+    pub fn iter(&self) -> VarIterator {
+        self.into_iter()
     }
 
     fn accumulate_grad(&self) {
@@ -250,11 +261,12 @@ impl Var {
             grad: 0.0,
             call,
         }));
-        Var { inner }
+        Self { inner }
     }
 }
 
 /// An iterator over the variables in the computation graph rooted at some variable.
+#[derive(Debug)]
 pub struct VarIterator {
     seen: HashSet<Var>,
     deque: VecDeque<Var>,
@@ -262,6 +274,7 @@ pub struct VarIterator {
 
 impl VarIterator {
     /// Creates a new iterator over the variables in the computation graph.
+    #[must_use]
     pub fn new(var: Var) -> Self {
         let mut seen = HashSet::default();
         seen.insert(var.clone());
@@ -290,6 +303,7 @@ impl Iterator for VarIterator {
 }
 
 /// A neuron with a bias and weights.
+#[derive(Debug)]
 pub struct Neuron {
     bias: Var,
     weights: Vec<Var>,
@@ -320,6 +334,11 @@ impl Neuron {
     }
 
     /// Computes the output of the neuron given an input.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input size mismatches the weights size.
+    #[must_use]
     pub fn forward(&self, input: &[Var]) -> Var {
         assert_eq!(input.len(), self.weights.len());
         (self.activation)(
@@ -339,6 +358,7 @@ impl Neuron {
 }
 
 /// A layer of neurons.
+#[derive(Debug)]
 pub struct Layer {
     neurons: Vec<Neuron>,
 }
@@ -363,28 +383,32 @@ impl Layer {
     }
 
     /// Computes the output of the layer given an input.
+    #[must_use]
     pub fn forward(&self, input: &[Var]) -> Vec<Var> {
         self.neurons.iter().map(|n| n.forward(input)).collect()
     }
 
     /// Gets the parameters of the layer.
     pub fn parameters(&self) -> Vec<Var> {
-        self.neurons.iter().flat_map(|n| n.parameters()).collect()
+        self.neurons.iter().flat_map(Neuron::parameters).collect()
     }
 }
 
 /// A multi-layer perceptron.
+#[derive(Debug)]
 pub struct Mlp {
     layers: Vec<Layer>,
 }
 
 impl Mlp {
     /// Creates a new multi-layer perceptron with the given layers.
+    #[must_use]
     pub fn new(layers: Vec<Layer>) -> Self {
         Self { layers }
     }
 
     /// Computes the output of the multi-layer perceptron given an input.
+    #[must_use]
     pub fn forward(&self, input: &[Var]) -> Vec<Var> {
         match self.layers.split_first() {
             Some((layer, ls)) => ls
@@ -423,12 +447,12 @@ impl Mlp {
                 println!("epoch: {}, loss: {}", epoch + 1, loss.value());
             }
         }
-        let duration = time::Instant::now() - start;
+        let duration = start.elapsed();
         println!("training took {}ms", duration.as_millis());
     }
 
     fn parameters(&self) -> Vec<Var> {
-        self.layers.iter().flat_map(|l| l.parameters()).collect()
+        self.layers.iter().flat_map(Layer::parameters).collect()
     }
 
     fn loss_sample<const M: usize, const N: usize>(
@@ -451,7 +475,8 @@ impl Mlp {
         for sample in samples {
             loss = &loss + &self.loss_sample(sample, metric);
         }
-        &loss / &Var::new(samples.len() as f64)
+        let count = u32::try_from(samples.len()).unwrap();
+        &loss / &Var::new(f64::from(count))
     }
 }
 
@@ -461,5 +486,6 @@ fn mse(pred: &[Var], output: &[Var]) -> Var {
         let diff = p - o;
         loss = &loss + &(&diff * &diff);
     }
-    &loss / &Var::new(output.len() as f64)
+    let count = u32::try_from(output.len()).unwrap();
+    &loss / &Var::new(f64::from(count))
 }
