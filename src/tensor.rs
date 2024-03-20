@@ -3,16 +3,14 @@
 mod error;
 mod layout;
 
-use std::{
-    ops::{self, Index},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 pub use error::Error;
 pub use layout::Layout;
-use layout::PositionIterator;
 use rand::Rng;
 use rand_distr::Distribution;
+
+use self::layout::IndexIterator;
 
 /// An N-dimension array holding elements row-major order. Tensors are immutable and new ones are
 /// created each time we perform an operation. Tensors' underlying data is shared using reference
@@ -23,67 +21,67 @@ pub struct Tensor {
     layout: Layout,
 }
 
-impl ops::Add for &Tensor {
-    type Output = Result<Tensor, Error>;
+impl std::ops::Add for &Tensor {
+    type Output = Tensor;
 
-    fn add(self, rhs: &Tensor) -> Self::Output {
-        self.zip(rhs, |x, y| x + y)
+    fn add(self, other: &Tensor) -> Self::Output {
+        self.safe_add(other).unwrap()
     }
 }
 
-impl ops::Add<Tensor> for &Tensor {
-    type Output = Result<Tensor, Error>;
+impl std::ops::Add<Tensor> for &Tensor {
+    type Output = Tensor;
 
-    fn add(self, rhs: Tensor) -> Self::Output {
-        self + &rhs
+    fn add(self, other: Tensor) -> Self::Output {
+        self.safe_add(&other).unwrap()
     }
 }
 
-impl ops::Add<Result<Tensor, Error>> for &Tensor {
-    type Output = Result<Tensor, Error>;
-
-    fn add(self, rhs: Result<Tensor, Error>) -> Self::Output {
-        rhs.and_then(|rhs| self + &rhs)
-    }
-}
-
-impl ops::Add<&Tensor> for Result<Tensor, Error> {
+impl std::ops::Add for Tensor {
     type Output = Self;
 
-    fn add(self, rhs: &Tensor) -> Self::Output {
-        self.and_then(|lhs| &lhs + rhs)
+    fn add(self, other: Self) -> Self::Output {
+        self.safe_add(&other).unwrap()
     }
 }
 
-impl ops::Mul for &Tensor {
-    type Output = Result<Tensor, Error>;
-
-    fn mul(self, rhs: &Tensor) -> Self::Output {
-        self.zip(rhs, |x, y| x * y)
-    }
-}
-
-impl ops::Mul<Tensor> for &Tensor {
-    type Output = Result<Tensor, Error>;
-
-    fn mul(self, rhs: Tensor) -> Self::Output {
-        self * &rhs
-    }
-}
-
-impl ops::Mul<Result<Tensor, Error>> for &Tensor {
-    type Output = Result<Tensor, Error>;
-
-    fn mul(self, rhs: Result<Tensor, Error>) -> Self::Output {
-        rhs.and_then(|rhs| self * &rhs)
-    }
-}
-
-impl ops::Mul<&Tensor> for Result<Tensor, Error> {
+impl std::ops::Add<&Self> for Tensor {
     type Output = Self;
 
-    fn mul(self, rhs: &Tensor) -> Self::Output {
-        self.and_then(|lhs| lhs.zip(rhs, |x, y| x * y))
+    fn add(self, other: &Self) -> Self::Output {
+        self.safe_add(other).unwrap()
+    }
+}
+
+impl std::ops::Mul for &Tensor {
+    type Output = Tensor;
+
+    fn mul(self, other: &Tensor) -> Self::Output {
+        self.safe_mul(other).unwrap()
+    }
+}
+
+impl std::ops::Mul<Tensor> for &Tensor {
+    type Output = Tensor;
+
+    fn mul(self, other: Tensor) -> Self::Output {
+        self.safe_mul(&other).unwrap()
+    }
+}
+
+impl std::ops::Mul for Tensor {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self::Output {
+        self.safe_mul(&other).unwrap()
+    }
+}
+
+impl std::ops::Mul<&Self> for Tensor {
+    type Output = Self;
+
+    fn mul(self, other: &Self) -> Self::Output {
+        self.safe_mul(other).unwrap()
     }
 }
 
@@ -115,7 +113,7 @@ impl From<&[f32]> for Tensor {
     }
 }
 
-impl Index<usize> for &Tensor {
+impl std::ops::Index<usize> for &Tensor {
     type Output = f32;
 
     fn index(&self, pos: usize) -> &Self::Output {
@@ -123,7 +121,7 @@ impl Index<usize> for &Tensor {
     }
 }
 
-impl Index<&[usize]> for &Tensor {
+impl std::ops::Index<&[usize]> for &Tensor {
     type Output = f32;
 
     fn index(&self, index: &[usize]) -> &Self::Output {
@@ -132,7 +130,7 @@ impl Index<&[usize]> for &Tensor {
     }
 }
 
-impl Index<Vec<usize>> for &Tensor {
+impl std::ops::Index<Vec<usize>> for &Tensor {
     type Output = f32;
 
     fn index(&self, index: Vec<usize>) -> &Self::Output {
@@ -140,7 +138,7 @@ impl Index<Vec<usize>> for &Tensor {
     }
 }
 
-impl<const N: usize> Index<[usize; N]> for &Tensor {
+impl<const N: usize> std::ops::Index<[usize; N]> for &Tensor {
     type Output = f32;
 
     fn index(&self, index: [usize; N]) -> &Self::Output {
@@ -148,7 +146,7 @@ impl<const N: usize> Index<[usize; N]> for &Tensor {
     }
 }
 
-impl<const N: usize> Index<&[usize; N]> for &Tensor {
+impl<const N: usize> std::ops::Index<&[usize; N]> for &Tensor {
     type Output = f32;
 
     fn index(&self, index: &[usize; N]) -> &Self::Output {
@@ -157,14 +155,14 @@ impl<const N: usize> Index<&[usize; N]> for &Tensor {
 }
 
 impl<'a> IntoIterator for &'a Tensor {
-    type Item = &'a f32;
+    type Item = f32;
 
     type IntoIter = RowIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         Self::IntoIter {
             tensor: self,
-            position_iterator: self.layout.iter_position(),
+            index_iterator: self.layout.iter(),
         }
     }
 }
@@ -260,7 +258,8 @@ impl Tensor {
         // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
         let lhs = self.reshape(&lhs_shape)?;
         let rhs = other.reshape(&rhs_shape)?;
-        let broadcasted_mul = (&lhs * rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2))?;
+        let broadcasted_mul =
+            &lhs.safe_mul(&rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2)?)?;
         // Sum the last dimension to get (..., m, n, 1)
         let sum_last_dim = broadcasted_mul.sum(&[broadcasted_mul.layout.shape().len() - 1])?;
         // Remove last dimension
@@ -277,6 +276,24 @@ impl Tensor {
             shape.remove(shape.len() - 1);
         }
         sum_last_dim.reshape(&shape)
+    }
+
+    /// Returns a new tensor resulted from adding the elements of `self` and `other`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tensors cannot be broadcasted.
+    pub fn safe_add(&self, other: &Self) -> Result<Self, Error> {
+        self.zip(other, |x, y| x + y)
+    }
+
+    /// Returns a new tensor resulted from multiplying the elements of `self` and `other`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tensors cannot be broadcasted.
+    pub fn safe_mul(&self, other: &Self) -> Result<Self, Error> {
+        self.zip(other, |x, y| x * y)
     }
 
     /// Returns a new tensor reduced along the given dimensions by summing all elements.
@@ -301,7 +318,7 @@ impl Tensor {
     #[must_use]
     pub fn map<F>(&self, op: F) -> Self
     where
-        F: Fn(&f32) -> f32,
+        F: Fn(f32) -> f32,
     {
         let mut res = Vec::with_capacity(self.layout.elems());
         for x in self {
@@ -323,7 +340,7 @@ impl Tensor {
     /// Returns an error if the tensors cannot be broadcasted.
     pub fn zip<F>(&self, other: &Self, op: F) -> Result<Self, Error>
     where
-        F: Fn(&f32, &f32) -> f32,
+        F: Fn(f32, f32) -> f32,
     {
         let (lhs, rhs) = self.broadcast(other)?;
         let mut res = Vec::with_capacity(lhs.layout.elems());
@@ -351,7 +368,7 @@ impl Tensor {
     {
         let (layout, reducer) = self.layout.reduce(dims)?;
         let mut res = vec![default; layout.elems()];
-        for idx in self.layout.iter_index() {
+        for idx in &self.layout {
             let src_pos = self.layout.index_to_position(&idx);
             let dst_pos = reducer.index_to_position(&idx);
             res[dst_pos] = op(&res[dst_pos], &self.data[src_pos]);
@@ -442,15 +459,13 @@ impl Tensor {
 #[derive(Debug)]
 pub struct RowIter<'a> {
     tensor: &'a Tensor,
-    position_iterator: PositionIterator<'a>,
+    index_iterator: IndexIterator<'a>,
 }
 
 impl<'a> Iterator for RowIter<'a> {
-    type Item = &'a f32;
+    type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.position_iterator
-            .next()
-            .map(|pos| &self.tensor.data[pos])
+        self.index_iterator.next().map(|idx| self.tensor[idx])
     }
 }

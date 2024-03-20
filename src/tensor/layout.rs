@@ -44,6 +44,19 @@ impl From<&[usize]> for Layout {
     }
 }
 
+impl<'a> IntoIterator for &'a Layout {
+    type Item = Vec<usize>;
+    type IntoIter = IndexIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexIterator {
+            layout: self,
+            index: vec![0; self.shape.len()],
+            exhausted: false,
+        }
+    }
+}
+
 impl Layout {
     /// Returns the layout for a scalar, which has no shape and strides.
     #[must_use]
@@ -317,14 +330,8 @@ impl Layout {
 
     /// Returns an iterator over the indices of a tensor.
     #[must_use]
-    pub fn iter_index(&self) -> IndexIterator<'_> {
-        IndexIterator::from(self)
-    }
-
-    /// Returns an iterator over the internal buffer positions of a tensor.
-    #[must_use]
-    pub fn iter_position(&self) -> PositionIterator<'_> {
-        PositionIterator::from(self)
+    pub fn iter(&self) -> IndexIterator<'_> {
+        self.into_iter()
     }
 }
 
@@ -353,41 +360,5 @@ impl<'a> Iterator for IndexIterator<'a> {
         }
         self.exhausted = self.index.iter().all(|e| *e == 0);
         Some(index)
-    }
-}
-
-impl<'a> From<&'a Layout> for IndexIterator<'a> {
-    fn from(layout: &'a Layout) -> Self {
-        Self {
-            layout,
-            index: vec![0; layout.shape.len()],
-            exhausted: false,
-        }
-    }
-}
-
-/// An iterator over a tensor's internal buffer positions.
-#[derive(Debug)]
-pub struct PositionIterator<'a> {
-    layout: &'a Layout,
-    index_iterator: IndexIterator<'a>,
-}
-
-impl<'a> Iterator for PositionIterator<'a> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.index_iterator
-            .next()
-            .map(|index| self.layout.index_to_position(&index))
-    }
-}
-
-impl<'a> From<&'a Layout> for PositionIterator<'a> {
-    fn from(layout: &'a Layout) -> Self {
-        Self {
-            layout,
-            index_iterator: IndexIterator::from(layout),
-        }
     }
 }

@@ -234,15 +234,7 @@ fn test_layout_index_iterator() {
     let indices: Vec<_> = (0..2)
         .flat_map(|x| (0..3).flat_map(move |y| (0..4).map(move |z| vec![x, y, z])))
         .collect();
-    for (i, idx) in layout.iter_index().enumerate() {
+    for (i, idx) in layout.iter().enumerate() {
         assert_eq!(idx, indices[i]);
-    }
-}
-
-#[test]
-fn test_layout_position_iterator() {
-    let layout = Layout::from(&[2, 3, 4]);
-    for (i, out) in layout.iter_position().enumerate() {
-        assert_eq!(out, i);
     }
 }
