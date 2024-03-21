@@ -10,7 +10,7 @@ pub use layout::Layout;
 use rand::Rng;
 use rand_distr::Distribution;
 
-use self::layout::IndexIterator;
+use self::layout::Iter;
 
 /// An N-dimension array holding elements row-major order. Tensors are immutable and new ones are
 /// created each time we perform an operation. Tensors' underlying data is shared using reference
@@ -459,7 +459,7 @@ impl Tensor {
 #[derive(Debug)]
 pub struct RowIter<'a> {
     tensor: &'a Tensor,
-    index_iterator: IndexIterator<'a>,
+    index_iterator: Iter<'a>,
 }
 
 impl<'a> Iterator for RowIter<'a> {

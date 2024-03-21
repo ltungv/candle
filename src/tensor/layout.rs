@@ -4,7 +4,7 @@ use std::iter;
 
 use super::error::Error;
 
-/// A description of how to translate between a contiguous memory array and an N-dimension array.
+/// A layout describes how an N-dimensional array is laid out in memory.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Layout {
     /// The number of elements in each dimension.
@@ -14,7 +14,7 @@ pub struct Layout {
     strides: Vec<usize>,
 }
 
-/// Creates a contiguous layout based on the given shape.
+/// Creates a contiguous row-major layout based on the given shape.
 impl From<Vec<usize>> for Layout {
     fn from(shape: Vec<usize>) -> Self {
         // Go backwards through the shape to calculate the strides. The last stride is always 1.
@@ -46,10 +46,10 @@ impl From<&[usize]> for Layout {
 
 impl<'a> IntoIterator for &'a Layout {
     type Item = Vec<usize>;
-    type IntoIter = IndexIterator<'a>;
+    type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IndexIterator {
+        Iter {
             layout: self,
             index: vec![0; self.shape.len()],
             exhausted: false,
@@ -58,33 +58,33 @@ impl<'a> IntoIterator for &'a Layout {
 }
 
 impl Layout {
-    /// Returns the layout for a scalar, which has no shape and strides.
+    /// Returns the layout for a scalar, which has no shape nor stride.
     #[must_use]
     pub fn scalar() -> Self {
         Self::default()
     }
 
-    /// Returns the shape of a tensor.
+    /// Returns the shape of the layout.
     #[must_use]
     pub fn shape(&self) -> &[usize] {
         self.shape.as_slice()
     }
 
-    /// Returns the strides of a tensor.
+    /// Returns the strides of the layout.
     #[must_use]
     pub fn strides(&self) -> &[usize] {
         self.strides.as_slice()
     }
 
-    /// Returns the number of elements in a tensor.
+    /// Returns the number of elements in the tensor having this layout.
     #[must_use]
     pub fn elems(&self) -> usize {
         self.shape.iter().product()
     }
 
     /// Returns 2 layouts where the first is reduced layout and the second is the reducer layout.
-    /// The reducer layout is used to map an index in the input tensor to a memory position in the
-    /// reduced tensor.
+    /// The reducer layout is used to map an index in the original tensor to a memory position in
+    /// the reduced tensor.
     ///
     /// # Errors
     ///
@@ -102,9 +102,9 @@ impl Layout {
         let mut reducer_layout = reduced_layout.clone();
         for &d in dims {
             // The reducer layout is similar to the reduced layout, except that the strides of the reduced
-            // dimensions are set to 0. By setting the stride of the reduced dimension to 0, we can map
-            // multiple elements along the reduced dimension within the input tensor to the same element
-            // in the reduced tensor.
+            // dimensions are set to 0. This prevent that dimension from contributing to the data position.
+            // Thus, we can map multiple elements along a dimension in the original tensor to the same
+            // memory position in the reduced tensor.
             reducer_layout.strides[d] = 0;
         }
         Ok((reduced_layout, reducer_layout))
@@ -330,20 +330,20 @@ impl Layout {
 
     /// Returns an iterator over the indices of a tensor.
     #[must_use]
-    pub fn iter(&self) -> IndexIterator<'_> {
+    pub fn iter(&self) -> Iter<'_> {
         self.into_iter()
     }
 }
 
 /// An iterator over a tensor's indices.
 #[derive(Debug)]
-pub struct IndexIterator<'a> {
+pub struct Iter<'a> {
     layout: &'a Layout,
     index: Vec<usize>,
     exhausted: bool,
 }
 
-impl<'a> Iterator for IndexIterator<'a> {
+impl<'a> Iterator for Iter<'a> {
     type Item = Vec<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
