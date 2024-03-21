@@ -11,19 +11,19 @@ fn test_layout_from_shape() {
 
     let layout = Layout::from(shape.as_slice());
     assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
+    assert_eq!(layout.stride(), &[12, 4, 1]);
 
     let layout = Layout::from(shape.to_vec());
     assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
+    assert_eq!(layout.stride(), &[12, 4, 1]);
 
     let layout = Layout::from(&shape);
     assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
+    assert_eq!(layout.stride(), &[12, 4, 1]);
 
     let layout = Layout::from(shape);
     assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
+    assert_eq!(layout.stride(), &[12, 4, 1]);
 }
 
 #[test]
@@ -74,27 +74,27 @@ fn test_layout_transpose() {
 
     let transposed = layout.transpose(0, 1).unwrap();
     assert_eq!(transposed.shape(), &[3, 2, 4]);
-    assert_eq!(transposed.strides(), &[4, 12, 1]);
+    assert_eq!(transposed.stride(), &[4, 12, 1]);
 
     let transposed = layout.transpose(1, 0).unwrap();
     assert_eq!(transposed.shape(), &[3, 2, 4]);
-    assert_eq!(transposed.strides(), &[4, 12, 1]);
+    assert_eq!(transposed.stride(), &[4, 12, 1]);
 
     let transposed = layout.transpose(0, 2).unwrap();
     assert_eq!(transposed.shape(), &[4, 3, 2]);
-    assert_eq!(transposed.strides(), &[1, 4, 12]);
+    assert_eq!(transposed.stride(), &[1, 4, 12]);
 
     let transposed = layout.transpose(2, 0).unwrap();
     assert_eq!(transposed.shape(), &[4, 3, 2]);
-    assert_eq!(transposed.strides(), &[1, 4, 12]);
+    assert_eq!(transposed.stride(), &[1, 4, 12]);
 
     let transposed = layout.transpose(1, 2).unwrap();
     assert_eq!(transposed.shape(), &[2, 4, 3]);
-    assert_eq!(transposed.strides(), &[12, 1, 4]);
+    assert_eq!(transposed.stride(), &[12, 1, 4]);
 
     let transposed = layout.transpose(2, 1).unwrap();
     assert_eq!(transposed.shape(), &[2, 4, 3]);
-    assert_eq!(transposed.strides(), &[12, 1, 4]);
+    assert_eq!(transposed.stride(), &[12, 1, 4]);
 }
 
 #[test]
@@ -103,27 +103,27 @@ fn test_layout_permute() {
 
     let permuted = layout.permute(&[0, 1, 2]).unwrap();
     assert_eq!(permuted.shape(), &[2, 3, 4]);
-    assert_eq!(permuted.strides(), &[12, 4, 1]);
+    assert_eq!(permuted.stride(), &[12, 4, 1]);
 
     let permuted = layout.permute(&[0, 2, 1]).unwrap();
     assert_eq!(permuted.shape(), &[2, 4, 3]);
-    assert_eq!(permuted.strides(), &[12, 1, 4]);
+    assert_eq!(permuted.stride(), &[12, 1, 4]);
 
     let permuted = layout.permute(&[1, 0, 2]).unwrap();
     assert_eq!(permuted.shape(), &[3, 2, 4]);
-    assert_eq!(permuted.strides(), &[4, 12, 1]);
+    assert_eq!(permuted.stride(), &[4, 12, 1]);
 
     let permuted = layout.permute(&[1, 2, 0]).unwrap();
     assert_eq!(permuted.shape(), &[3, 4, 2]);
-    assert_eq!(permuted.strides(), &[4, 1, 12]);
+    assert_eq!(permuted.stride(), &[4, 1, 12]);
 
     let permuted = layout.permute(&[2, 0, 1]).unwrap();
     assert_eq!(permuted.shape(), &[4, 2, 3]);
-    assert_eq!(permuted.strides(), &[1, 12, 4]);
+    assert_eq!(permuted.stride(), &[1, 12, 4]);
 
     let permuted = layout.permute(&[2, 1, 0]).unwrap();
     assert_eq!(permuted.shape(), &[4, 3, 2]);
-    assert_eq!(permuted.strides(), &[1, 4, 12]);
+    assert_eq!(permuted.stride(), &[1, 4, 12]);
 }
 
 #[test]

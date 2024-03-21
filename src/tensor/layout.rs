@@ -11,18 +11,18 @@ pub struct Layout {
     shape: Vec<usize>,
     /// The number of elements in the memory array that need to be skipped to move to the next
     /// element in each dimension.
-    strides: Vec<usize>,
+    stride: Vec<usize>,
 }
 
 /// Creates a contiguous row-major layout based on the given shape.
 impl From<Vec<usize>> for Layout {
     fn from(shape: Vec<usize>) -> Self {
-        // Go backwards through the shape to calculate the strides. The last stride is always 1.
-        let mut strides = vec![1; shape.len()];
+        // Go backwards through the shape to calculate the stride. The last stride is always 1.
+        let mut stride = vec![1; shape.len()];
         for (i, s) in shape.iter().skip(1).enumerate().rev() {
-            strides[i] = strides[i + 1] * s;
+            stride[i] = stride[i + 1] * s;
         }
-        Self { shape, strides }
+        Self { shape, stride }
     }
 }
 
@@ -70,10 +70,10 @@ impl Layout {
         self.shape.as_slice()
     }
 
-    /// Returns the strides of the layout.
+    /// Returns the stride of the layout.
     #[must_use]
-    pub fn strides(&self) -> &[usize] {
-        self.strides.as_slice()
+    pub fn stride(&self) -> &[usize] {
+        self.stride.as_slice()
     }
 
     /// Returns the number of elements in the tensor having this layout.
@@ -101,11 +101,11 @@ impl Layout {
         let reduced_layout = Self::from(reduced_shape);
         let mut reducer_layout = reduced_layout.clone();
         for &d in dims {
-            // The reducer layout is similar to the reduced layout, except that the strides of the reduced
+            // The reducer layout is similar to the reduced layout, except that the stride of the reduced
             // dimensions are set to 0. This prevent that dimension from contributing to the data position.
             // Thus, we can map multiple elements along a dimension in the original tensor to the same
             // memory position in the reduced tensor.
-            reducer_layout.strides[d] = 0;
+            reducer_layout.stride[d] = 0;
         }
         Ok((reduced_layout, reducer_layout))
     }
@@ -114,16 +114,16 @@ impl Layout {
     #[must_use]
     pub fn squeeze(&self) -> Self {
         let mut shape = Vec::new();
-        let mut strides = Vec::new();
+        let mut stride = Vec::new();
         let shape_iter = self.shape.iter().copied();
-        let strides_iter = self.strides.iter().copied();
-        for (size, stride) in shape_iter.zip(strides_iter) {
-            if size != 1 {
-                shape.push(size);
-                strides.push(stride);
+        let stride_iter = self.stride.iter().copied();
+        for (dim_size, dim_stride) in shape_iter.zip(stride_iter) {
+            if dim_size != 1 {
+                shape.push(dim_size);
+                stride.push(dim_stride);
             }
         }
-        Self { shape, strides }
+        Self { shape, stride }
     }
 
     /// Returns a new layout where the 2 dimensions are transposed.
@@ -139,10 +139,10 @@ impl Layout {
             return Err(Error::UnknownDimension(dim1));
         }
         let mut shape = self.shape.clone();
-        let mut strides = self.strides.clone();
+        let mut stride = self.stride.clone();
         shape.swap(dim0, dim1);
-        strides.swap(dim0, dim1);
-        Ok(Self { shape, strides })
+        stride.swap(dim0, dim1);
+        Ok(Self { shape, stride })
     }
 
     /// Returns a new layout where the dimensions are permuted.
@@ -153,14 +153,14 @@ impl Layout {
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, Error> {
         let mut sum_dim = 0;
         let mut shape = Vec::with_capacity(self.shape.len());
-        let mut strides = Vec::with_capacity(self.strides.len());
+        let mut stride = Vec::with_capacity(self.stride.len());
         for &d in permutation {
             if d >= self.shape.len() {
                 return Err(Error::UnknownDimension(d));
             }
             sum_dim += d;
             shape.push(self.shape[d]);
-            strides.push(self.strides[d]);
+            stride.push(self.stride[d]);
         }
         let num_dims = permutation.len();
         if num_dims * (num_dims - 1) / 2 != sum_dim {
@@ -168,7 +168,7 @@ impl Layout {
                 "Each dimension must be specified exactly once.".to_string(),
             ));
         }
-        Ok(Self { shape, strides })
+        Ok(Self { shape, stride })
     }
 
     /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
@@ -185,13 +185,13 @@ impl Layout {
     ///
     /// Returns an error if the layout cannot be expanded to the new shape.
     pub fn expand(&self, new_shape: &[usize]) -> Result<Self, Error> {
-        let mut new_strides = vec![0; new_shape.len()];
+        let mut new_stride = vec![0; new_shape.len()];
         let new_shape_iter = new_shape.iter().copied();
-        let new_strides_iter = new_strides.iter_mut();
+        let new_stride_iter = new_stride.iter_mut();
         let old_shape_iter = self.shape.iter().copied();
-        let old_strides_iter = self.strides.iter().copied();
-        let new_dim = new_shape_iter.zip(new_strides_iter).rev();
-        let old_dim = old_shape_iter.zip(old_strides_iter).rev();
+        let old_stride_iter = self.stride.iter().copied();
+        let new_dim = new_shape_iter.zip(new_stride_iter).rev();
+        let old_dim = old_shape_iter.zip(old_stride_iter).rev();
         for ((new_size, new_stride), (old_size, old_stride)) in new_dim.zip(old_dim) {
             if old_size == new_size {
                 *new_stride = old_stride;
@@ -206,7 +206,7 @@ impl Layout {
         }
         Ok(Self {
             shape: new_shape.to_vec(),
-            strides: new_strides,
+            stride: new_stride,
         })
     }
 
@@ -259,7 +259,7 @@ impl Layout {
             ));
         }
         let old_layout = self.squeeze();
-        let mut new_strides = vec![1; new_shape.len()];
+        let mut new_stride = vec![1; new_shape.len()];
         let mut old_dim = 0;
         let mut new_dim = 0;
         while old_dim < old_layout.shape.len() && new_dim < new_shape.len() {
@@ -280,29 +280,29 @@ impl Layout {
             }
             // Check if the reshaped dimensions are non-contiguous in memory.
             for (d1, d2) in (old_dim_prev..old_dim).map(|d| (d, d + 1)) {
-                let expected_stride = old_layout.strides[d2] * old_layout.shape[d2];
-                if old_layout.strides[d1] != expected_stride {
+                let expected_stride = old_layout.stride[d2] * old_layout.shape[d2];
+                if old_layout.stride[d1] != expected_stride {
                     return Ok(None);
                 }
             }
-            // Build a strides backward.
-            new_strides[new_dim] = old_layout.strides[old_dim];
+            // Build a stride backward.
+            new_stride[new_dim] = old_layout.stride[old_dim];
             for (d1, d2) in (new_dim_prev..new_dim).map(|d| (d, d + 1)).rev() {
-                new_strides[d1] = new_strides[d2] * new_shape[d2];
+                new_stride[d1] = new_stride[d2] * new_shape[d2];
             }
             old_dim += 1;
             new_dim += 1;
         }
         if new_dim > 0 {
-            // Fill in the remaining strides.
-            let last_stride = new_strides[new_dim - 1];
-            for stride in new_strides.iter_mut().skip(new_dim) {
+            // Fill in the remaining stride.
+            let last_stride = new_stride[new_dim - 1];
+            for stride in new_stride.iter_mut().skip(new_dim) {
                 *stride = last_stride;
             }
         }
         Ok(Some(Self {
             shape: new_shape.to_vec(),
-            strides: new_strides,
+            stride: new_stride,
         }))
     }
 
@@ -311,7 +311,7 @@ impl Layout {
     pub fn index_to_position(&self, index: &[usize]) -> usize {
         index
             .iter()
-            .zip(self.strides.iter())
+            .zip(self.stride.iter())
             .map(|(x, s)| x * s)
             .sum()
     }
@@ -321,7 +321,7 @@ impl Layout {
     pub fn position_to_index(&self, position: usize) -> Vec<usize> {
         let mut index = Vec::with_capacity(self.shape.len());
         let mut remainder = position;
-        for s in &self.strides {
+        for s in &self.stride {
             index.push(remainder / s);
             remainder %= s;
         }

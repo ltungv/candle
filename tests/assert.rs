@@ -7,17 +7,17 @@ pub fn assert_contiguous_layout(layout: &Layout, shape: &[usize]) {
 
 pub fn assert_scalar_layout(layout: &Layout) {
     assert!(layout.shape().is_empty());
-    assert!(layout.strides().is_empty());
+    assert!(layout.stride().is_empty());
 }
 
 pub fn assert_reduced_layout(reduced: &Layout, reducer: &Layout, dims: &[usize], shape: &[usize]) {
     assert_contiguous_layout(reduced, shape);
-    let mut strides = reduced.strides().to_vec();
+    let mut strides = reduced.stride().to_vec();
     for d in dims {
         strides[*d] = 0;
     }
     assert_eq!(reducer.shape(), shape);
-    assert_eq!(reducer.strides(), strides);
+    assert_eq!(reducer.stride(), strides);
 }
 
 pub fn assert_expanded_layout(expanded: &Layout, original: &Layout, shape: &[usize]) {
@@ -27,7 +27,7 @@ pub fn assert_expanded_layout(expanded: &Layout, original: &Layout, shape: &[usi
         .iter()
         .rev()
         .zip(shape.iter().rev())
-        .zip(original.strides().iter().rev())
+        .zip(original.stride().iter().rev())
     {
         if d1 == d2 {
             strides.push(*stride);
@@ -40,7 +40,7 @@ pub fn assert_expanded_layout(expanded: &Layout, original: &Layout, shape: &[usi
     }
     strides.reverse();
     assert_eq!(expanded.shape(), shape);
-    assert_eq!(expanded.strides(), strides);
+    assert_eq!(expanded.stride(), strides);
 }
 
 pub fn assert_contiguous_tensor(tensor: &Tensor, data: &[f32], shape: &[usize]) {
