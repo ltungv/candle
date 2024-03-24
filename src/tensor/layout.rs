@@ -8,39 +8,48 @@ use super::error::Error;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Layout {
     /// The number of elements in each dimension.
-    shape: Vec<usize>,
+    shape: Box<[usize]>,
     /// The number of elements in the memory array that need to be skipped to move to the next
     /// element in each dimension.
-    stride: Vec<usize>,
+    stride: Box<[usize]>,
 }
 
 /// Creates a contiguous row-major layout based on the given shape.
-impl From<Vec<usize>> for Layout {
-    fn from(shape: Vec<usize>) -> Self {
+impl From<Box<[usize]>> for Layout {
+    fn from(shape: Box<[usize]>) -> Self {
         // Go backwards through the shape to calculate the stride. The last stride is always 1.
         let mut stride = vec![1; shape.len()];
         for (i, s) in shape.iter().skip(1).enumerate().rev() {
             stride[i] = stride[i + 1] * s;
         }
-        Self { shape, stride }
+        Self {
+            shape,
+            stride: stride.into_boxed_slice(),
+        }
+    }
+}
+
+impl From<Vec<usize>> for Layout {
+    fn from(shape: Vec<usize>) -> Self {
+        Self::from(shape.into_boxed_slice())
     }
 }
 
 impl<const N: usize> From<[usize; N]> for Layout {
     fn from(shape: [usize; N]) -> Self {
-        Self::from(shape.to_vec())
+        Self::from(Box::from(shape.as_slice()))
     }
 }
 
 impl<const N: usize> From<&[usize; N]> for Layout {
     fn from(shape: &[usize; N]) -> Self {
-        Self::from(shape.to_vec())
+        Self::from(Box::from(shape.as_slice()))
     }
 }
 
 impl From<&[usize]> for Layout {
     fn from(shape: &[usize]) -> Self {
-        Self::from(shape.to_vec())
+        Self::from(Box::from(shape))
     }
 }
 
@@ -67,13 +76,13 @@ impl Layout {
     /// Returns the shape of the layout.
     #[must_use]
     pub fn shape(&self) -> &[usize] {
-        self.shape.as_slice()
+        self.shape.as_ref()
     }
 
     /// Returns the stride of the layout.
     #[must_use]
     pub fn stride(&self) -> &[usize] {
-        self.stride.as_slice()
+        self.stride.as_ref()
     }
 
     /// Returns the number of elements in the tensor having this layout.
@@ -123,7 +132,10 @@ impl Layout {
                 stride.push(dim_stride);
             }
         }
-        Self { shape, stride }
+        Self {
+            shape: shape.into_boxed_slice(),
+            stride: stride.into_boxed_slice(),
+        }
     }
 
     /// Returns a new layout where the 2 dimensions are transposed.
@@ -168,7 +180,10 @@ impl Layout {
                 "Each dimension must be specified exactly once.".to_string(),
             ));
         }
-        Ok(Self { shape, stride })
+        Ok(Self {
+            shape: shape.into_boxed_slice(),
+            stride: stride.into_boxed_slice(),
+        })
     }
 
     /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
@@ -199,14 +214,14 @@ impl Layout {
                 *new_stride = 0;
             } else {
                 return Err(Error::IncompatibleShapes(
-                    self.shape.clone(),
+                    self.shape.to_vec(),
                     new_shape.to_vec(),
                 ));
             }
         }
         Ok(Self {
-            shape: new_shape.to_vec(),
-            stride: new_stride,
+            shape: Box::from(new_shape),
+            stride: new_stride.into_boxed_slice(),
         })
     }
 
@@ -254,7 +269,7 @@ impl Layout {
     pub fn reshape(&self, new_shape: &[usize]) -> Result<Option<Self>, Error> {
         if self.elems() != new_shape.iter().product() {
             return Err(Error::IncompatibleShapes(
-                self.shape.clone(),
+                self.shape.to_vec(),
                 new_shape.to_vec(),
             ));
         }
@@ -301,8 +316,8 @@ impl Layout {
             }
         }
         Ok(Some(Self {
-            shape: new_shape.to_vec(),
-            stride: new_stride,
+            shape: Box::from(new_shape),
+            stride: new_stride.into_boxed_slice(),
         }))
     }
 
@@ -321,7 +336,7 @@ impl Layout {
     pub fn position_to_index(&self, position: usize) -> Vec<usize> {
         let mut index = Vec::with_capacity(self.shape.len());
         let mut remainder = position;
-        for s in &self.stride {
+        for s in self.stride.as_ref() {
             index.push(remainder / s);
             remainder %= s;
         }

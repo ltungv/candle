@@ -90,7 +90,7 @@ impl From<Vec<f32>> for Tensor {
         let data_len = data.len();
         Self {
             data: Arc::new(data),
-            layout: Layout::from(&[data_len]),
+            layout: Layout::from(Box::from([data_len].as_slice())),
         }
     }
 }
