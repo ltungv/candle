@@ -1,7 +1,5 @@
 //! Describes how N-dimension arrays are laid out in memory.
 
-use std::iter;
-
 use super::error::Error;
 
 /// A layout describes how an N-dimensional array is laid out in memory.
@@ -17,10 +15,15 @@ pub struct Layout {
 /// Creates a contiguous row-major layout based on the given shape.
 impl From<Box<[usize]>> for Layout {
     fn from(shape: Box<[usize]>) -> Self {
+        if shape.is_empty() {
+            return Self::default();
+        }
         // Go backwards through the shape to calculate the stride. The last stride is always 1.
         let mut stride = vec![1; shape.len()];
-        for (i, s) in shape.iter().skip(1).enumerate().rev() {
-            stride[i] = stride[i + 1] * s;
+        let mut idx = shape.len() - 1;
+        while idx > 0 {
+            idx -= 1;
+            stride[idx] = stride[idx + 1] * shape[idx + 1];
         }
         Self {
             shape,
@@ -100,9 +103,8 @@ impl Layout {
     /// Returns an error if one of the dimensions to reduce is invalid.
     pub fn reduce(&self, dims: &[usize]) -> Result<(Self, Self), Error> {
         let mut reduced_shape = self.shape.clone();
-        for d in dims.iter().copied() {
+        for &d in dims {
             if d >= reduced_shape.len() {
-                // Reduced along an out-of-bounds dimension.
                 return Err(Error::UnknownDimension(d));
             }
             reduced_shape[d] = 1;
@@ -122,11 +124,9 @@ impl Layout {
     /// Returns a new layout where all singleton dimensions are removed.
     #[must_use]
     pub fn squeeze(&self) -> Self {
-        let mut shape = Vec::new();
-        let mut stride = Vec::new();
-        let shape_iter = self.shape.iter().copied();
-        let stride_iter = self.stride.iter().copied();
-        for (dim_size, dim_stride) in shape_iter.zip(stride_iter) {
+        let mut shape = Vec::with_capacity(self.shape.len());
+        let mut stride = Vec::with_capacity(self.stride.len());
+        for (&dim_size, &dim_stride) in self.shape.iter().zip(self.stride.iter()) {
             if dim_size != 1 {
                 shape.push(dim_size);
                 stride.push(dim_stride);
@@ -163,19 +163,19 @@ impl Layout {
     ///
     /// Returns an error if one of the dimensions is invalid.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, Error> {
-        let mut sum_dim = 0;
         let mut shape = Vec::with_capacity(self.shape.len());
         let mut stride = Vec::with_capacity(self.stride.len());
+        let mut sum_dim = 0;
         for &d in permutation {
             if d >= self.shape.len() {
                 return Err(Error::UnknownDimension(d));
             }
-            sum_dim += d;
             shape.push(self.shape[d]);
             stride.push(self.stride[d]);
+            sum_dim += d;
         }
         let num_dims = permutation.len();
-        if num_dims * (num_dims - 1) / 2 != sum_dim {
+        if num_dims * (num_dims - 1) != 2 * sum_dim {
             return Err(Error::Custom(
                 "Each dimension must be specified exactly once.".to_string(),
             ));
@@ -200,18 +200,22 @@ impl Layout {
     ///
     /// Returns an error if the layout cannot be expanded to the new shape.
     pub fn expand(&self, new_shape: &[usize]) -> Result<Self, Error> {
+        if new_shape.len() < self.shape.len() {
+            return Err(Error::IncompatibleShapes(
+                self.shape.to_vec(),
+                new_shape.to_vec(),
+            ));
+        }
         let mut new_stride = vec![0; new_shape.len()];
-        let new_shape_iter = new_shape.iter().copied();
-        let new_stride_iter = new_stride.iter_mut();
-        let old_shape_iter = self.shape.iter().copied();
-        let old_stride_iter = self.stride.iter().copied();
-        let new_dim = new_shape_iter.zip(new_stride_iter).rev();
-        let old_dim = old_shape_iter.zip(old_stride_iter).rev();
-        for ((new_size, new_stride), (old_size, old_stride)) in new_dim.zip(old_dim) {
+        for dim in 0..self.shape.len() {
+            let old_idx = self.shape.len() - dim - 1;
+            let new_idx = new_shape.len() - dim - 1;
+            let old_size = self.shape[old_idx];
+            let new_size = new_shape[new_idx];
             if old_size == new_size {
-                *new_stride = old_stride;
+                new_stride[new_idx] = self.stride[old_idx];
             } else if old_size == 1 {
-                *new_stride = 0;
+                new_stride[new_idx] = 0;
             } else {
                 return Err(Error::IncompatibleShapes(
                     self.shape.to_vec(),
@@ -241,19 +245,20 @@ impl Layout {
             (other.shape(), self.shape())
         };
         // Zipping the 2 shapes in reverse order while filling in 1 for the missing dimensions.
-        let mut broadcasted_shape = Vec::with_capacity(large.len());
-        let small_iter = small.iter().copied().rev().chain(iter::once(1).cycle());
-        let large_iter = large.iter().copied().rev();
-        for sizes in small_iter.zip(large_iter) {
-            match sizes {
-                // Broadcasted shape is the same as the larger shape
-                (d, 1) | (1, d) => broadcasted_shape.push(d),
-                // The dimensions are equals
-                (d, dd) if d == dd => broadcasted_shape.push(d),
-                _ => return Err(Error::IncompatibleShapes(small.to_vec(), large.to_vec())),
+        let mut broadcasted_shape = large.to_vec();
+        for dim in 0..small.len() {
+            let sm_idx = small.len() - dim - 1;
+            let sm_size = small[sm_idx];
+            let lg_idx = large.len() - dim - 1;
+            let lg_size = large[lg_idx];
+            if sm_size == 1 {
+                broadcasted_shape[lg_idx] = lg_size;
+            } else if lg_size == 1 || lg_size == sm_size {
+                broadcasted_shape[lg_idx] = sm_size;
+            } else {
+                return Err(Error::IncompatibleShapes(small.to_vec(), large.to_vec()));
             }
         }
-        broadcasted_shape.reverse();
         let lhs = self.expand(broadcasted_shape.as_slice())?;
         let rhs = other.expand(broadcasted_shape.as_slice())?;
         Ok((lhs, rhs))
