@@ -125,7 +125,7 @@ impl std::ops::Index<&[usize]> for &Tensor {
     type Output = f32;
 
     fn index(&self, index: &[usize]) -> &Self::Output {
-        let pos = self.layout.index_to_position(index);
+        let pos = self.layout.translate(index);
         &self[pos]
     }
 }
@@ -369,8 +369,8 @@ impl Tensor {
         let (layout, reducer) = self.layout.reduce(dims)?;
         let mut res = vec![default; layout.elems()];
         for idx in &self.layout {
-            let src_pos = self.layout.index_to_position(&idx);
-            let dst_pos = reducer.index_to_position(&idx);
+            let src_pos = self.layout.translate(&idx);
+            let dst_pos = reducer.translate(&idx);
             res[dst_pos] = op(&res[dst_pos], &self.data[src_pos]);
         }
         Ok(Self {

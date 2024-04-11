@@ -9,50 +9,49 @@ pub struct Layout {
     shape: Box<[usize]>,
     /// The number of elements in the memory array that need to be skipped to move to the next
     /// element in each dimension.
-    stride: Box<[usize]>,
+    strides: Box<[usize]>,
 }
 
-/// Creates a contiguous row-major layout based on the given shape.
 impl From<Box<[usize]>> for Layout {
+    /// Creates a contiguous row-major layout based on the given shape.
     fn from(shape: Box<[usize]>) -> Self {
         if shape.is_empty() {
             return Self::default();
         }
-        // Go backwards through the shape to calculate the stride. The last stride is always 1.
-        let mut stride = vec![1; shape.len()];
-        let mut idx = shape.len() - 1;
-        while idx > 0 {
-            idx -= 1;
-            stride[idx] = stride[idx + 1] * shape[idx + 1];
+        // Go backwards through the shape to calculate the strides. The last strides is always 1.
+        let mut strides = vec![1; shape.len()].into_boxed_slice();
+        for idx in (0..shape.len() - 1).rev() {
+            strides[idx] = strides[idx + 1] * shape[idx + 1];
         }
-        Self {
-            shape,
-            stride: stride.into_boxed_slice(),
-        }
+        Self { shape, strides }
+    }
+}
+
+impl From<&[usize]> for Layout {
+    /// Creates a contiguous row-major layout based on the given shape.
+    fn from(shape: &[usize]) -> Self {
+        Self::from(Box::from(shape))
     }
 }
 
 impl From<Vec<usize>> for Layout {
+    /// Creates a contiguous row-major layout based on the given shape.
     fn from(shape: Vec<usize>) -> Self {
         Self::from(shape.into_boxed_slice())
     }
 }
 
 impl<const N: usize> From<[usize; N]> for Layout {
+    /// Creates a contiguous row-major layout based on the given shape.
     fn from(shape: [usize; N]) -> Self {
         Self::from(Box::from(shape.as_slice()))
     }
 }
 
 impl<const N: usize> From<&[usize; N]> for Layout {
+    /// Creates a contiguous row-major layout based on the given shape.
     fn from(shape: &[usize; N]) -> Self {
         Self::from(Box::from(shape.as_slice()))
-    }
-}
-
-impl From<&[usize]> for Layout {
-    fn from(shape: &[usize]) -> Self {
-        Self::from(Box::from(shape))
     }
 }
 
@@ -60,6 +59,7 @@ impl<'a> IntoIterator for &'a Layout {
     type Item = Vec<usize>;
     type IntoIter = Iter<'a>;
 
+    /// Creates a row-major iterator over all indices of the tensor.
     fn into_iter(self) -> Self::IntoIter {
         Iter {
             layout: self,
@@ -70,7 +70,7 @@ impl<'a> IntoIterator for &'a Layout {
 }
 
 impl Layout {
-    /// Returns the layout for a scalar, which has no shape nor stride.
+    /// Returns the layout for a scalar, which has no shape nor strides.
     #[must_use]
     pub fn scalar() -> Self {
         Self::default()
@@ -82,10 +82,10 @@ impl Layout {
         self.shape.as_ref()
     }
 
-    /// Returns the stride of the layout.
+    /// Returns the strides of the layout.
     #[must_use]
-    pub fn stride(&self) -> &[usize] {
-        self.stride.as_ref()
+    pub fn strides(&self) -> &[usize] {
+        self.strides.as_ref()
     }
 
     /// Returns the number of elements in the tensor having this layout.
@@ -112,11 +112,11 @@ impl Layout {
         let reduced_layout = Self::from(reduced_shape);
         let mut reducer_layout = reduced_layout.clone();
         for &d in dims {
-            // The reducer layout is similar to the reduced layout, except that the stride of the reduced
-            // dimensions are set to 0. This prevent that dimension from contributing to the data position.
+            // The reducer layout is similar to the reduced layout, except that the strides of the reduced
+            // dimensions are set to 0. This prevents that dimension from contributing to the data position.
             // Thus, we can map multiple elements along a dimension in the original tensor to the same
             // memory position in the reduced tensor.
-            reducer_layout.stride[d] = 0;
+            reducer_layout.strides[d] = 0;
         }
         Ok((reduced_layout, reducer_layout))
     }
@@ -125,16 +125,16 @@ impl Layout {
     #[must_use]
     pub fn squeeze(&self) -> Self {
         let mut shape = Vec::with_capacity(self.shape.len());
-        let mut stride = Vec::with_capacity(self.stride.len());
-        for (&dim_size, &dim_stride) in self.shape.iter().zip(self.stride.iter()) {
+        let mut strides = Vec::with_capacity(self.strides.len());
+        for (&dim_size, &dim_stride) in self.shape.iter().zip(self.strides.iter()) {
             if dim_size != 1 {
                 shape.push(dim_size);
-                stride.push(dim_stride);
+                strides.push(dim_stride);
             }
         }
         Self {
             shape: shape.into_boxed_slice(),
-            stride: stride.into_boxed_slice(),
+            strides: strides.into_boxed_slice(),
         }
     }
 
@@ -151,10 +151,10 @@ impl Layout {
             return Err(Error::UnknownDimension(dim1));
         }
         let mut shape = self.shape.clone();
-        let mut stride = self.stride.clone();
+        let mut strides = self.strides.clone();
         shape.swap(dim0, dim1);
-        stride.swap(dim0, dim1);
-        Ok(Self { shape, stride })
+        strides.swap(dim0, dim1);
+        Ok(Self { shape, strides })
     }
 
     /// Returns a new layout where the dimensions are permuted.
@@ -164,25 +164,24 @@ impl Layout {
     /// Returns an error if one of the dimensions is invalid.
     pub fn permute(&self, permutation: &[usize]) -> Result<Self, Error> {
         let mut shape = Vec::with_capacity(self.shape.len());
-        let mut stride = Vec::with_capacity(self.stride.len());
+        let mut strides = Vec::with_capacity(self.strides.len());
         let mut sum_dim = 0;
         for &d in permutation {
             if d >= self.shape.len() {
                 return Err(Error::UnknownDimension(d));
             }
             shape.push(self.shape[d]);
-            stride.push(self.stride[d]);
+            strides.push(self.strides[d]);
             sum_dim += d;
         }
-        let num_dims = permutation.len();
-        if num_dims * (num_dims - 1) != 2 * sum_dim {
+        if permutation.len() * (permutation.len() - 1) != 2 * sum_dim {
             return Err(Error::Custom(
                 "Each dimension must be specified exactly once.".to_string(),
             ));
         }
         Ok(Self {
             shape: shape.into_boxed_slice(),
-            stride: stride.into_boxed_slice(),
+            strides: strides.into_boxed_slice(),
         })
     }
 
@@ -193,7 +192,7 @@ impl Layout {
     ///
     /// Expanding a tensor does not allocate new memory, but only creates a new view on the
     /// existing tensor where a dimension of size one is expanded to a larger size by setting
-    /// the stride to 0. Any dimension of size 1 can be expanded to an arbitrary value without
+    /// the strides to 0. Any dimension of size 1 can be expanded to an arbitrary value without
     /// allocating new memory.
     ///
     /// # Errors
@@ -206,16 +205,14 @@ impl Layout {
                 new_shape.to_vec(),
             ));
         }
-        let mut new_stride = vec![0; new_shape.len()];
+        let mut new_strides = vec![0; new_shape.len()];
         for dim in 0..self.shape.len() {
             let old_idx = self.shape.len() - dim - 1;
             let new_idx = new_shape.len() - dim - 1;
-            let old_size = self.shape[old_idx];
-            let new_size = new_shape[new_idx];
-            if old_size == new_size {
-                new_stride[new_idx] = self.stride[old_idx];
-            } else if old_size == 1 {
-                new_stride[new_idx] = 0;
+            if self.shape[old_idx] == new_shape[new_idx] {
+                new_strides[new_idx] = self.strides[old_idx];
+            } else if self.shape[old_idx] == 1 {
+                new_strides[new_idx] = 0;
             } else {
                 return Err(Error::IncompatibleShapes(
                     self.shape.to_vec(),
@@ -225,7 +222,7 @@ impl Layout {
         }
         Ok(Self {
             shape: Box::from(new_shape),
-            stride: new_stride.into_boxed_slice(),
+            strides: new_strides.into_boxed_slice(),
         })
     }
 
@@ -248,8 +245,8 @@ impl Layout {
         let mut broadcasted_shape = large.to_vec();
         for dim in 0..small.len() {
             let sm_idx = small.len() - dim - 1;
-            let sm_size = small[sm_idx];
             let lg_idx = large.len() - dim - 1;
+            let sm_size = small[sm_idx];
             let lg_size = large[lg_idx];
             if sm_size == 1 {
                 broadcasted_shape[lg_idx] = lg_size;
@@ -279,7 +276,7 @@ impl Layout {
             ));
         }
         let old_layout = self.squeeze();
-        let mut new_stride = vec![1; new_shape.len()];
+        let mut new_strides = vec![1; new_shape.len()];
         let mut old_dim = 0;
         let mut new_dim = 0;
         while old_dim < old_layout.shape.len() && new_dim < new_shape.len() {
@@ -299,53 +296,41 @@ impl Layout {
                 }
             }
             // Check if the reshaped dimensions are non-contiguous in memory.
-            for (d1, d2) in (old_dim_prev..old_dim).map(|d| (d, d + 1)) {
-                let expected_stride = old_layout.stride[d2] * old_layout.shape[d2];
-                if old_layout.stride[d1] != expected_stride {
+            for dim in old_dim_prev..old_dim {
+                let expected_stride = old_layout.strides[dim + 1] * old_layout.shape[dim + 1];
+                if old_layout.strides[dim] != expected_stride {
                     return Ok(None);
                 }
             }
-            // Build a stride backward.
-            new_stride[new_dim] = old_layout.stride[old_dim];
-            for (d1, d2) in (new_dim_prev..new_dim).map(|d| (d, d + 1)).rev() {
-                new_stride[d1] = new_stride[d2] * new_shape[d2];
+            // Build a strides backward.
+            new_strides[new_dim] = old_layout.strides[old_dim];
+            for dim in (new_dim_prev..new_dim).rev() {
+                new_strides[dim] = new_strides[dim + 1] * new_shape[dim + 1];
             }
             old_dim += 1;
             new_dim += 1;
         }
         if new_dim > 0 {
-            // Fill in the remaining stride.
-            let last_stride = new_stride[new_dim - 1];
-            for stride in new_stride.iter_mut().skip(new_dim) {
+            // Fill in the remaining strides.
+            let last_stride = new_strides[new_dim - 1];
+            for stride in new_strides.iter_mut().skip(new_dim) {
                 *stride = last_stride;
             }
         }
         Ok(Some(Self {
             shape: Box::from(new_shape),
-            stride: new_stride.into_boxed_slice(),
+            strides: new_strides.into_boxed_slice(),
         }))
     }
 
     /// Translates a tensor index into a position in the data buffer.
     #[must_use]
-    pub fn index_to_position(&self, index: &[usize]) -> usize {
+    pub fn translate(&self, index: &[usize]) -> usize {
         index
             .iter()
-            .zip(self.stride.iter())
+            .zip(self.strides.iter())
             .map(|(x, s)| x * s)
             .sum()
-    }
-
-    /// Translates a position in the data buffer into a tensor index.
-    #[must_use]
-    pub fn position_to_index(&self, position: usize) -> Vec<usize> {
-        let mut index = Vec::with_capacity(self.shape.len());
-        let mut remainder = position;
-        for s in self.stride.as_ref() {
-            index.push(remainder / s);
-            remainder %= s;
-        }
-        index
     }
 
     /// Returns an iterator over the indices of a tensor.
