@@ -62,14 +62,3 @@ pub fn assert_scalar_tensor(tensor: &Tensor, data: f32) {
     assert_eq!(data_collected.len(), 1);
     assert_eq!(data_collected[0], data);
 }
-
-pub fn assert_zipped_tensor<F>(zipped: &Tensor, t1: &Tensor, t2: &Tensor, op: F)
-where
-    F: Fn(f32, f32) -> f32,
-{
-    let (l1, l2) = t1.layout().broadcast(t2.layout()).unwrap();
-    for index in zipped.layout().iter() {
-        let exp = op(t1[l1.translate(&index)], t2[l2.translate(&index)]);
-        assert_eq!(zipped[index], exp);
-    }
-}
