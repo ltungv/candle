@@ -257,6 +257,7 @@ impl Tensor {
         let mut rhs_shape = other.layout.shape().to_vec();
         let orig_lhs_dims = lhs_shape.len();
         let orig_rhs_dims = rhs_shape.len();
+        // Can't do matrix multiplication with scalars
         if orig_lhs_dims == 0 || orig_rhs_dims == 0 {
             return Err(Error::IncompatibleShapes(lhs_shape, rhs_shape));
         }
@@ -268,6 +269,7 @@ impl Tensor {
         if orig_rhs_dims == 1 {
             rhs_shape.push(1);
         }
+        // The last dimension of the LHS must match the second-to-last dimension of the RHS
         if lhs_shape[lhs_shape.len() - 1] != rhs_shape[rhs_shape.len() - 2] {
             return Err(Error::IncompatibleShapes(lhs_shape, rhs_shape));
         }
@@ -278,13 +280,12 @@ impl Tensor {
         // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
         let lhs = self.reshape(&lhs_shape)?;
         let rhs = other.reshape(&rhs_shape)?;
-        let broadcasted_mul =
-            &lhs.safe_mul(&rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2)?)?;
+        let mul = &lhs.safe_mul(&rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2)?)?;
         // Sum the last dimension to get (..., m, n, 1)
-        let sum_last_dim = broadcasted_mul.sum(&[broadcasted_mul.layout.shape().len() - 1])?;
+        let sum = mul.sum(&[mul.layout.shape().len() - 1])?;
         // Remove last dimension
         let mut shape = {
-            let s = sum_last_dim.layout.shape();
+            let s = sum.layout.shape();
             s[..s.len() - 1].to_vec()
         };
         // Remove prepended dimension if necessary
@@ -295,7 +296,7 @@ impl Tensor {
         if orig_rhs_dims == 1 {
             shape.remove(shape.len() - 1);
         }
-        sum_last_dim.reshape(&shape)
+        sum.reshape(&shape)
     }
 
     /// Returns a new tensor resulted from adding the elements of `self` and `other`.
