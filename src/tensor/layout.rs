@@ -44,26 +44,26 @@ impl From<Vec<usize>> for Layout {
 impl<const N: usize> From<[usize; N]> for Layout {
     /// Creates a contiguous row-major layout based on the given shape.
     fn from(shape: [usize; N]) -> Self {
-        Self::from(Box::from(shape.as_slice()))
+        Self::from(Box::from(shape))
     }
 }
 
 impl<const N: usize> From<&[usize; N]> for Layout {
     /// Creates a contiguous row-major layout based on the given shape.
     fn from(shape: &[usize; N]) -> Self {
-        Self::from(Box::from(shape.as_slice()))
+        Self::from(Box::from(*shape))
     }
 }
 
 impl<'a> IntoIterator for &'a Layout {
-    type Item = Vec<usize>;
+    type Item = Box<[usize]>;
     type IntoIter = Iter<'a>;
 
     /// Creates a row-major iterator over all indices of the tensor.
     fn into_iter(self) -> Self::IntoIter {
         Iter {
             layout: self,
-            index: vec![0; self.shape.len()],
+            index: Box::from(vec![0; self.shape.len()]),
             exhausted: false,
         }
     }
@@ -344,12 +344,12 @@ impl Layout {
 #[derive(Debug)]
 pub struct Iter<'a> {
     layout: &'a Layout,
-    index: Vec<usize>,
+    index: Box<[usize]>,
     exhausted: bool,
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = Vec<usize>;
+    type Item = Box<[usize]>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.exhausted {

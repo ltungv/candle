@@ -204,6 +204,6 @@ fn test_layout_index_iterator() {
         .flat_map(|x| (0..3).flat_map(move |y| (0..4).map(move |z| vec![x, y, z])))
         .collect();
     for (i, idx) in layout.iter().enumerate() {
-        assert_eq!(idx, indices[i]);
+        assert_eq!(idx.as_ref(), indices[i].as_slice());
     }
 }

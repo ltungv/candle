@@ -101,21 +101,27 @@ impl From<Vec<f32>> for Tensor {
     }
 }
 
+impl From<Box<[f32]>> for Tensor {
+    fn from(data: Box<[f32]>) -> Self {
+        Self::from(Arc::from(data))
+    }
+}
+
 impl From<&[f32]> for Tensor {
     fn from(data: &[f32]) -> Self {
-        Self::from(data.to_vec())
+        Self::from(Arc::from(data))
     }
 }
 
 impl<const N: usize> From<[f32; N]> for Tensor {
     fn from(data: [f32; N]) -> Self {
-        Self::from(data.to_vec())
+        Self::from(Arc::from(data))
     }
 }
 
 impl<const N: usize> From<&[f32; N]> for Tensor {
     fn from(data: &[f32; N]) -> Self {
-        Self::from(data.to_vec())
+        Self::from(Arc::from(*data))
     }
 }
 
@@ -133,6 +139,14 @@ impl std::ops::Index<&[usize]> for &Tensor {
     fn index(&self, index: &[usize]) -> &Self::Output {
         let pos = self.layout.translate(index);
         &self[pos]
+    }
+}
+
+impl std::ops::Index<Box<[usize]>> for &Tensor {
+    type Output = f32;
+
+    fn index(&self, index: Box<[usize]>) -> &Self::Output {
+        &self[index.as_ref()]
     }
 }
 
@@ -361,14 +375,17 @@ impl Tensor {
     where
         F: Fn(f32, f32) -> f32,
     {
-        let (lhs, rhs) = self.broadcast(other)?;
-        let mut res = Vec::with_capacity(lhs.layout.elems());
-        for (x, y) in lhs.into_iter().zip(rhs.into_iter()) {
-            res.push(op(x, y));
+        let (lhs_layout, rhs_layout) = self.layout.broadcast(&other.layout)?;
+        let mut res = Vec::with_capacity(lhs_layout.elems());
+        for idx in &lhs_layout {
+            res.push(op(
+                self[lhs_layout.translate(&idx)],
+                other[rhs_layout.translate(&idx)],
+            ));
         }
         Ok(Self {
             data: Arc::from(res),
-            layout: Layout::from(lhs.layout.shape()),
+            layout: Layout::from(lhs_layout.shape()),
         })
     }
 
@@ -390,7 +407,7 @@ impl Tensor {
         for idx in &self.layout {
             let src_pos = self.layout.translate(&idx);
             let dst_pos = reducer.translate(&idx);
-            res[dst_pos] = op(&res[dst_pos], &self.data[src_pos]);
+            res[dst_pos] = op(&res[dst_pos], &self[src_pos]);
         }
         Ok(Self {
             data: Arc::from(res),
@@ -456,21 +473,6 @@ impl Tensor {
     #[must_use]
     pub fn iter(&self) -> RowIter<'_> {
         self.into_iter()
-    }
-
-    /// Broadcast the tensors and returns their broadcasted versions. See [`TensorLayout::broadcast`]
-    /// for more details.
-    fn broadcast(&self, other: &Self) -> Result<(Self, Self), Error> {
-        let (lhs_layout, rhs_layout) = self.layout.broadcast(&other.layout)?;
-        let lhs = Self {
-            data: self.data.clone(),
-            layout: lhs_layout,
-        };
-        let rhs = Self {
-            data: other.data.clone(),
-            layout: rhs_layout,
-        };
-        Ok((lhs, rhs))
     }
 }
 
