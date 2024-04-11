@@ -111,11 +111,7 @@ fn test_tensor_broadcasted_mul() {
 
 #[test]
 fn test_tensor_sum() {
-    let t = Tensor::shaped(
-        &[2, 2, 2],
-        (0..8).map(|x| x as f32).collect::<Vec<_>>().as_slice(),
-    )
-    .unwrap();
+    let t = Tensor::shaped(&[2, 2, 2], &linspace(0., 8., 8)).unwrap();
     let t1 = t.sum(&[0]).unwrap();
     let t2 = t.sum(&[1]).unwrap();
     let t3 = t.sum(&[2]).unwrap();
@@ -135,11 +131,7 @@ fn test_tensor_sum() {
 
 #[test]
 fn test_tensor_prod() {
-    let t = Tensor::shaped(
-        &[2, 2, 2],
-        (1..9).map(|x| x as f32).collect::<Vec<_>>().as_slice(),
-    )
-    .unwrap();
+    let t = Tensor::shaped(&[2, 2, 2], &linspace(1., 9., 8)).unwrap();
     let t1 = t.prod(&[0]).unwrap();
     let t2 = t.prod(&[1]).unwrap();
     let t3 = t.prod(&[2]).unwrap();
@@ -203,9 +195,9 @@ fn test_tensor_reduce() {
 
 #[test]
 fn test_tensor_matmul() {
-    let data1d: Vec<_> = (0..3).map(|x| x as f32).collect();
-    let data2d: Vec<_> = (0..6).map(|x| x as f32).collect();
-    let data3d: Vec<_> = (0..24).map(|x| x as f32).collect();
+    let data1d = linspace(0., 3., 3);
+    let data2d = linspace(0., 6., 6);
+    let data3d = linspace(0., 24., 24);
 
     // 1D x 1D
     let t1 = Tensor::shaped(&[3], &data1d).unwrap();
@@ -325,7 +317,7 @@ fn test_tensor_into_iter() {
         assert_eq!(x, *y);
     }
 
-    let data = (0..24).map(|x| x as f32).collect::<Vec<_>>();
+    let data = linspace(0., 24., 24);
     let t = Tensor::shaped(&[2, 3, 4], &data).unwrap();
     for (x, y) in t.into_iter().zip(&data) {
         assert_eq!(x, *y);

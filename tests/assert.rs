@@ -28,24 +28,16 @@ pub fn assert_reduced_layout(reduced: &Layout, reducer: &Layout, dims: &[usize],
 }
 
 pub fn assert_expanded_layout(expanded: &Layout, original: &Layout, shape: &[usize]) {
-    let mut strides = Vec::with_capacity(shape.len());
-    for ((d1, d2), stride) in original
-        .shape()
-        .iter()
-        .rev()
-        .zip(shape.iter().rev())
-        .zip(original.strides().iter().rev())
-    {
-        if d1 == d2 {
-            strides.push(*stride);
-        } else {
-            strides.push(0);
+    let mut strides = vec![0; shape.len()];
+    let original_shape = original.shape();
+    let original_strides = original.strides();
+    for i in 0..original.shape().len() {
+        let d1 = original_shape.len() - i - 1;
+        let d2 = shape.len() - i - 1;
+        if shape[d2] == original_shape[d1] {
+            strides[d2] = original_strides[d1];
         }
     }
-    while shape.len() > strides.len() {
-        strides.push(0);
-    }
-    strides.reverse();
     assert_eq!(expanded.shape(), shape);
     assert_eq!(expanded.strides(), strides);
 }
