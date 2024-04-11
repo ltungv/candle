@@ -1,35 +1,13 @@
 pub mod assert;
 
-use assert::assert_contiguous_layout;
+use assert::{assert_contiguous_layout, assert_reduced_layout};
 use candle::tensor::Layout;
 
-use crate::assert::{assert_expanded_layout, assert_reduced_layout};
-
-#[test]
-fn test_layout_from_shape() {
-    let shape = [2, 3, 4];
-
-    let layout = Layout::from(shape.as_slice());
-    assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
-
-    let layout = Layout::from(shape.to_vec());
-    assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
-
-    let layout = Layout::from(&shape);
-    assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
-
-    let layout = Layout::from(shape);
-    assert_eq!(layout.shape(), &shape);
-    assert_eq!(layout.strides(), &[12, 4, 1]);
-}
+use crate::assert::assert_expanded_layout;
 
 #[test]
 fn test_layout_reduce() {
     let layout = Layout::from(&[2, 3, 4]);
-
     let (reduced, reducer) = layout.reduce(&[0]).unwrap();
     assert_reduced_layout(&reduced, &reducer, &[0], &[1, 3, 4]);
 
@@ -44,6 +22,9 @@ fn test_layout_reduce() {
 
     let (reduced, reducer) = layout.reduce(&[0, 2]).unwrap();
     assert_reduced_layout(&reduced, &reducer, &[0, 2], &[1, 3, 1]);
+
+    let (reduced, reducer) = layout.reduce(&[1, 2]).unwrap();
+    assert_reduced_layout(&reduced, &reducer, &[1, 2], &[2, 1, 1]);
 
     let (reduced, reducer) = layout.reduce(&[0, 1, 2]).unwrap();
     assert_reduced_layout(&reduced, &reducer, &[0, 1, 2], &[1, 1, 1]);

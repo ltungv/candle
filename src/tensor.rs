@@ -85,13 +85,19 @@ impl std::ops::Mul<&Self> for Tensor {
     }
 }
 
-impl From<Vec<f32>> for Tensor {
-    fn from(data: Vec<f32>) -> Self {
+impl From<Arc<[f32]>> for Tensor {
+    fn from(data: Arc<[f32]>) -> Self {
         let data_len = data.len();
         Self {
-            data: Arc::from(data),
+            data,
             layout: Layout::from(&[data_len]),
         }
+    }
+}
+
+impl From<Vec<f32>> for Tensor {
+    fn from(data: Vec<f32>) -> Self {
+        Self::from(Arc::from(data))
     }
 }
 

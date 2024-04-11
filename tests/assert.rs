@@ -1,8 +1,15 @@
 use candle::tensor::{Layout, Tensor};
 
-pub fn assert_contiguous_layout(layout: &Layout, shape: &[usize]) {
-    let expected = Layout::from(shape);
-    assert_eq!(*layout, expected);
+pub fn assert_contiguous_layout(layout: &Layout, expected_shape: &[usize]) {
+    let shape = layout.shape();
+    let strides = layout.strides();
+    assert_eq!(shape, expected_shape);
+    assert_eq!(shape.len(), strides.len());
+    if !shape.is_empty() {
+        for dim in (0..shape.len() - 1).rev() {
+            assert_eq!(strides[dim], strides[dim + 1] * shape[dim + 1]);
+        }
+    }
 }
 
 pub fn assert_scalar_layout(layout: &Layout) {
@@ -12,12 +19,12 @@ pub fn assert_scalar_layout(layout: &Layout) {
 
 pub fn assert_reduced_layout(reduced: &Layout, reducer: &Layout, dims: &[usize], shape: &[usize]) {
     assert_contiguous_layout(reduced, shape);
-    let mut stridess = reduced.strides().to_vec();
+    let mut strides = reduced.strides().to_vec();
     for d in dims {
-        stridess[*d] = 0;
+        strides[*d] = 0;
     }
     assert_eq!(reducer.shape(), shape);
-    assert_eq!(reducer.strides(), stridess);
+    assert_eq!(reducer.strides(), strides);
 }
 
 pub fn assert_expanded_layout(expanded: &Layout, original: &Layout, shape: &[usize]) {
