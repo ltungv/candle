@@ -314,6 +314,19 @@ impl Tensor {
         self.reduce(dims, 1.0, |x, y| x * y)
     }
 
+    /// Returns a copy of the tensor having the data stored contiguously in memory.
+    #[must_use]
+    pub fn contiguous(&self) -> Self {
+        let mut res = Vec::with_capacity(self.layout.elems());
+        for x in self {
+            res.push(x);
+        }
+        Self {
+            data: Arc::from(res),
+            layout: Layout::from(self.layout.shape()),
+        }
+    }
+
     /// Applies the unary function `op` to all elements in the tensor.
     #[must_use]
     pub fn map<F>(&self, op: F) -> Self
@@ -423,7 +436,7 @@ impl Tensor {
     /// Returns an error if the new shape is incompatible with the current layout.
     pub fn reshape(&self, shape: &[usize]) -> Result<Self, Error> {
         self.layout.reshape(shape)?.map_or_else(
-            || Self::from(self.data.as_ref()).reshape(shape),
+            || self.contiguous().reshape(shape),
             |layout| {
                 Ok(Self {
                     data: self.data.clone(),

@@ -205,7 +205,7 @@ fn test_layout_reshape() {
 }
 
 #[test]
-fn test_layout_index_to_position() {
+fn test_layout_translate() {
     let layout = Layout::from(&[2, 2, 2]);
     let indices: Vec<_> = (0..2)
         .flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| vec![x, y, z])))
