@@ -1,4 +1,4 @@
-use candle::{
+use candle::experimentals::{
     dataset::VectorMapping,
     scalar::{ad_backward_graph, ad_backward_tape},
 };

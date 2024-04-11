@@ -16,6 +16,5 @@
 )]
 #![allow(clippy::similar_names)]
 
-pub mod dataset;
-pub mod scalar;
+pub mod experimentals;
 pub mod tensor;

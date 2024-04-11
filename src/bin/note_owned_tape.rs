@@ -1,6 +1,6 @@
 use std::time;
 
-use candle::{
+use candle::experimentals::{
     dataset::VectorMapping,
     scalar::ad_backward_tape_owned::{Layer, Mlp, Var},
 };
