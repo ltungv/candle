@@ -17,7 +17,7 @@ use self::layout::Iter;
 /// counting and only cloned when an operations can't be performed without modifying the data.
 #[derive(Debug)]
 pub struct Tensor {
-    data: Arc<Vec<f32>>,
+    data: Arc<[f32]>,
     layout: Layout,
 }
 
@@ -89,9 +89,15 @@ impl From<Vec<f32>> for Tensor {
     fn from(data: Vec<f32>) -> Self {
         let data_len = data.len();
         Self {
-            data: Arc::new(data),
+            data: Arc::from(data),
             layout: Layout::from(&[data_len]),
         }
+    }
+}
+
+impl From<&[f32]> for Tensor {
+    fn from(data: &[f32]) -> Self {
+        Self::from(data.to_vec())
     }
 }
 
@@ -103,12 +109,6 @@ impl<const N: usize> From<[f32; N]> for Tensor {
 
 impl<const N: usize> From<&[f32; N]> for Tensor {
     fn from(data: &[f32; N]) -> Self {
-        Self::from(data.to_vec())
-    }
-}
-
-impl From<&[f32]> for Tensor {
-    fn from(data: &[f32]) -> Self {
         Self::from(data.to_vec())
     }
 }
@@ -172,7 +172,7 @@ impl Tensor {
     #[must_use]
     pub fn scalar(x: f32) -> Self {
         Self {
-            data: Arc::new(vec![x]),
+            data: Arc::from(vec![x]),
             layout: Layout::scalar(),
         }
     }
@@ -188,7 +188,7 @@ impl Tensor {
             return Err(Error::IncompatibleShapes(shape.to_vec(), vec![data.len()]));
         }
         Ok(Self {
-            data: Arc::new(data.to_vec()),
+            data: Arc::from(data.to_vec()),
             layout,
         })
     }
@@ -200,9 +200,9 @@ impl Tensor {
         D: Distribution<f32>,
     {
         let layout = Layout::from(shape);
-        let data = rng.sample_iter(distribution).take(layout.elems()).collect();
+        let data: Vec<_> = rng.sample_iter(distribution).take(layout.elems()).collect();
         Self {
-            data: Arc::new(data),
+            data: Arc::from(data),
             layout,
         }
     }
@@ -325,7 +325,7 @@ impl Tensor {
             res.push(op(x));
         }
         Self {
-            data: Arc::new(res),
+            data: Arc::from(res),
             layout: Layout::from(self.layout.shape()),
         }
     }
@@ -348,7 +348,7 @@ impl Tensor {
             res.push(op(x, y));
         }
         Ok(Self {
-            data: Arc::new(res),
+            data: Arc::from(res),
             layout: Layout::from(lhs.layout.shape()),
         })
     }
@@ -374,7 +374,7 @@ impl Tensor {
             res[dst_pos] = op(&res[dst_pos], &self.data[src_pos]);
         }
         Ok(Self {
-            data: Arc::new(res),
+            data: Arc::from(res),
             layout,
         })
     }
@@ -423,7 +423,7 @@ impl Tensor {
     /// Returns an error if the new shape is incompatible with the current layout.
     pub fn reshape(&self, shape: &[usize]) -> Result<Self, Error> {
         self.layout.reshape(shape)?.map_or_else(
-            || Self::from(self.data.as_ref().clone()).reshape(shape),
+            || Self::from(self.data.as_ref()).reshape(shape),
             |layout| {
                 Ok(Self {
                     data: self.data.clone(),

@@ -19,7 +19,7 @@ impl From<Box<[usize]>> for Layout {
             return Self::default();
         }
         // Go backwards through the shape to calculate the strides. The last strides is always 1.
-        let mut strides = vec![1; shape.len()].into_boxed_slice();
+        let mut strides = Box::<[usize]>::from(vec![1; shape.len()]);
         for idx in (0..shape.len() - 1).rev() {
             strides[idx] = strides[idx + 1] * shape[idx + 1];
         }
@@ -37,7 +37,7 @@ impl From<&[usize]> for Layout {
 impl From<Vec<usize>> for Layout {
     /// Creates a contiguous row-major layout based on the given shape.
     fn from(shape: Vec<usize>) -> Self {
-        Self::from(shape.into_boxed_slice())
+        Self::from(Box::from(shape))
     }
 }
 
@@ -133,8 +133,8 @@ impl Layout {
             }
         }
         Self {
-            shape: shape.into_boxed_slice(),
-            strides: strides.into_boxed_slice(),
+            shape: Box::from(shape),
+            strides: Box::from(strides),
         }
     }
 
@@ -180,8 +180,8 @@ impl Layout {
             ));
         }
         Ok(Self {
-            shape: shape.into_boxed_slice(),
-            strides: strides.into_boxed_slice(),
+            shape: Box::from(shape),
+            strides: Box::from(strides),
         })
     }
 
@@ -222,7 +222,7 @@ impl Layout {
         }
         Ok(Self {
             shape: Box::from(new_shape),
-            strides: new_strides.into_boxed_slice(),
+            strides: Box::from(new_strides),
         })
     }
 
@@ -319,7 +319,7 @@ impl Layout {
         }
         Ok(Some(Self {
             shape: Box::from(new_shape),
-            strides: new_strides.into_boxed_slice(),
+            strides: Box::from(new_strides),
         }))
     }
 
