@@ -5,6 +5,7 @@
     missing_docs,
     rust_2018_idioms,
     rust_2021_compatibility,
+    rust_2024_compatibility,
     unsafe_code
 )]
 #![warn(
@@ -16,5 +17,5 @@
 )]
 #![allow(clippy::similar_names)]
 
-pub mod experimentals;
+pub mod ops;
 pub mod tensor;
