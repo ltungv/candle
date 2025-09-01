@@ -1,11 +1,11 @@
-//! Traits defining operations across different abstraction levels of an automatically
-//! differentiable tensor.
+//! Traits defining operations across different abstraction levels of a tensor implementation.
 
-use std::{num::NonZeroUsize, ops};
+use std::num::NonZeroUsize;
 
-use num::traits::bounds::LowerBounded;
-
-use crate::tensor::cpu;
+use crate::tensor::{
+    cpu,
+    dtype::{Bool, Elem, Float, Num},
+};
 
 /// Low-level tensor operations that must be suppported by the hardware.
 ///
@@ -19,7 +19,13 @@ pub trait LL {
     /// Create a new tensor with the given shape and data.
     fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Option<Self::Repr<E>>
     where
-        E: Clone;
+        E: Elem;
+
+    /// Convert a tensor to another, changing its elements' type.
+    fn convert<E, EInto>(t: &Self::Repr<E>) -> Self::Repr<EInto>
+    where
+        E: Elem + Into<EInto>,
+        EInto: Elem;
 
     /// Return the shape of the tensor.
     fn shape<E>(t: &Self::Repr<E>) -> &[NonZeroUsize];
@@ -27,57 +33,57 @@ pub trait LL {
     /// Apply exp to each element.
     fn exp<E>(t: &Self::Repr<E>) -> Self::Repr<E>
     where
-        E: num::Float;
+        E: Float;
 
     /// Apply the natural logarithm to each element.
     fn ln<E>(t: &Self::Repr<E>) -> Self::Repr<E>
     where
-        E: num::Float;
+        E: Float;
 
     /// Add `rhs` to `lhs`, element-wise.
     fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Add<Output = E>;
+        E: Num;
 
     /// Subtract `rhs` from `lhs`, element-wise.
     fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Sub<Output = E>;
+        E: Num;
 
     /// Multiply `lhs` by `rhs`, element-wise.
     fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Mul<Output = E>;
+        E: Num;
 
     /// Divide `lhs` by `rhs`, element-wise.
     fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Div<Output = E>;
+        E: Num;
 
     /// Raise `lhs` to the power of `rhs`, element-wise.
     fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: num::Float;
+        E: Float;
 
     /// Compare 'lhs' with 'rhs', element-wise, returning 1s where the elements are equal.
     fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<bool>>
     where
-        E: PartialEq;
+        E: Elem + PartialEq;
 
     /// Reduce along the given axes by summing all elements.
     fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + num::Zero + ops::Add<Output = E>;
+        E: Num;
 
     /// Reduce along the given axes by getting the maximum of all elements.
     fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + LowerBounded + PartialOrd;
+        E: Bool;
 
     /// Reshape the tensor to the given shape, keeping the number of elements unchanged.
     fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
     where
-        E: Clone;
+        E: Elem;
 
     /// Permute the tensor axes according to the given permutation.
     fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Option<Self::Repr<E>>;
@@ -98,7 +104,13 @@ pub trait ML {
     /// Create a new tensor with the given shape and data.
     fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Option<Self::Repr<E>>
     where
-        E: Clone;
+        E: Elem;
+
+    /// Convert a tensor to another, changing its elements' type.
+    fn convert<E, EInto>(t: &Self::Repr<E>) -> Self::Repr<EInto>
+    where
+        E: Elem + Into<EInto>,
+        EInto: Elem;
 
     /// Return the shape of the tensor.
     fn shape<E>(t: &Self::Repr<E>) -> &[NonZeroUsize];
@@ -106,176 +118,206 @@ pub trait ML {
     /// Apply exp to each element.
     fn exp<E>(t: &Self::Repr<E>) -> Self::Repr<E>
     where
-        E: num::Float;
+        E: Float;
 
     /// Apply the natural logarithm to each element.
     fn ln<E>(t: &Self::Repr<E>) -> Self::Repr<E>
     where
-        E: num::Float;
+        E: Float;
 
     /// Add `rhs` to `lhs`, element-wise.
     fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Add<Output = E>;
+        E: Num;
 
     /// Subtract `rhs` from `lhs`, element-wise.
     fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Sub<Output = E>;
+        E: Num;
 
     /// Multiply `lhs` by `rhs`, element-wise.
     fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Mul<Output = E>;
+        E: Num;
 
     /// Divide `lhs` by `rhs`, element-wise.
     fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Div<Output = E>;
+        E: Num;
 
     /// Raise `lhs` to the power of `rhs`, element-wise.
     fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: num::Float;
+        E: Float;
 
     /// Compare 'lhs' with 'rhs', element-wise, returning 1s where the elements are equal.
     fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<bool>>
     where
-        E: PartialEq;
+        E: Elem + PartialEq;
 
     /// Reduce along the given axes by summing all elements.
     fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + num::Zero + ops::Add<Output = E>;
+        E: Num;
 
     /// Reduce along the given axes by getting the maximum of all elements.
     fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + LowerBounded + PartialOrd;
+        E: Num;
 
     /// Reshape the tensor to the given shape, keeping the number of elements unchanged.
     fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
     where
-        E: Clone;
+        E: Elem;
 
     /// Permute the tensor axes according to the given permutation.
-    fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Option<Self::Repr<E>>;
+    fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Option<Self::Repr<E>>
+    where
+        E: Elem;
 
     /// Expand singleton axes in a tensor to a larger size.
-    fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>;
+    fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
+    where
+        E: Num;
+
+    /// Create a tensor given its shape filled with a single value.
+    fn fill<E>(shape: &[NonZeroUsize], value: E) -> Self::Repr<E>
+    where
+        E: Num,
+    {
+        Self::new(&vec![NonZeroUsize::MIN; shape.len()], &[value])
+            .and_then(|t| Self::expand::<E>(&t, shape))
+            .expect("fill is infallible")
+    }
+
+    /// Apply negation to each element.
+    fn neg<E>(t: &Self::Repr<E>) -> Self::Repr<E>
+    where
+        E: Num,
+    {
+        let zeroes = Self::fill::<E>(Self::shape::<E>(t), E::zero());
+        Self::sub::<E>(&zeroes, t).expect("neg is infallible")
+    }
 }
 
-// The set of low-level operations is a subset of the set of mid-level operations. This effectively
-// makes all low-level operations differentiable.
+// The set of low-level operations is a subset of the set of mid-level operations.
 //
 // Both [`LL`] and [`ML`] seems to share that same set of operations. However, this won't be the
 // case as more functionalities are added. In general, the set of operations in [`LL`] should be
 // kept small so a majority of hardwares can be supported, while the set of operations in [`ML`] can
 // grow as much as needed.
-impl<I> ML for I
+impl<Ops> ML for Ops
 where
-    I: LL,
+    Ops: LL,
 {
-    type Repr<E> = I::Repr<E>;
+    type Repr<E> = Ops::Repr<E>;
 
     fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Option<Self::Repr<E>>
     where
-        E: Clone,
+        E: Elem,
     {
-        I::new::<E>(shape, data)
+        Ops::new::<E>(shape, data)
+    }
+
+    fn convert<E, EInto>(t: &Self::Repr<E>) -> Self::Repr<EInto>
+    where
+        E: Elem + Into<EInto>,
+        EInto: Elem,
+    {
+        Ops::convert::<E, EInto>(t)
     }
 
     fn shape<E>(t: &Self::Repr<E>) -> &[NonZeroUsize] {
-        I::shape::<E>(t)
+        Ops::shape::<E>(t)
     }
 
     fn exp<E>(t: &Self::Repr<E>) -> Self::Repr<E>
     where
-        E: num::Float,
+        E: Float,
     {
-        I::exp::<E>(t)
+        Ops::exp::<E>(t)
     }
 
     fn ln<E>(t: &Self::Repr<E>) -> Self::Repr<E>
     where
-        E: num::Float,
+        E: Float,
     {
-        I::ln::<E>(t)
+        Ops::ln::<E>(t)
     }
 
     fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Add<Output = E>,
+        E: Num,
     {
-        I::add::<E>(lhs, rhs)
+        Ops::add::<E>(lhs, rhs)
     }
 
     fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Sub<Output = E>,
+        E: Num,
     {
-        I::sub::<E>(lhs, rhs)
+        Ops::sub::<E>(lhs, rhs)
     }
 
     fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Mul<Output = E>,
+        E: Num,
     {
-        I::mul::<E>(lhs, rhs)
+        Ops::mul::<E>(lhs, rhs)
     }
 
     fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Div<Output = E>,
+        E: Num,
     {
-        I::div::<E>(lhs, rhs)
+        Ops::div::<E>(lhs, rhs)
     }
 
     fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: num::Float,
+        E: Float,
     {
-        I::pow::<E>(lhs, rhs)
+        Ops::pow::<E>(lhs, rhs)
     }
 
     fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<bool>>
     where
-        E: PartialEq,
+        E: Elem + PartialEq,
     {
-        I::eq::<E>(lhs, rhs)
+        Ops::eq::<E>(lhs, rhs)
     }
 
     fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + num::Zero + ops::Add<Output = E>,
+        E: Num,
     {
-        I::sum::<E>(t, axes)
+        Ops::sum::<E>(t, axes)
     }
 
     fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + LowerBounded + PartialOrd,
+        E: Bool,
     {
-        I::max::<E>(t, axes)
+        Ops::max::<E>(t, axes)
     }
 
     fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
     where
-        E: Clone,
+        E: Elem,
     {
-        I::reshape::<E>(t, shape)
+        Ops::reshape::<E>(t, shape)
     }
 
     fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Option<Self::Repr<E>> {
-        I::permute::<E>(t, permutation)
+        Ops::permute::<E>(t, permutation)
     }
 
     fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>> {
-        I::expand::<E>(t, shape)
+        Ops::expand::<E>(t, shape)
     }
 }
 
-/// An operation for returning a clone of a tensor on the CPU.
+/// Tensor that supports converting itself into a representation on the CPU.
 pub trait ToCpu: LL {
     /// Return a clone of the tensor on the CPU.
     fn to_cpu<E>(t: &Self::Repr<E>) -> cpu::Tensor<E>;

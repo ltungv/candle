@@ -2,9 +2,10 @@
 
 use std::{cmp, iter, num::NonZeroUsize, ops, sync::Arc};
 
-use num::traits::bounds::LowerBounded;
-
-use crate::ops::{ToCpu, LL};
+use crate::tensor::{
+    dtype::{Bool, Elem, Float, Num},
+    ops::{ToCpu, LL},
+};
 
 /// Low-level tensor operations on the CPU.
 #[derive(Debug)]
@@ -13,7 +14,10 @@ pub struct TensorOps;
 impl LL for TensorOps {
     type Repr<E> = Tensor<E>;
 
-    fn new<E: Clone>(shape: &[NonZeroUsize], data: &[E]) -> Option<Self::Repr<E>> {
+    fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Option<Self::Repr<E>>
+    where
+        E: Elem,
+    {
         let layout = Layout::from(shape);
         if layout.capacity().get() != data.len() {
             return None;
@@ -24,63 +28,77 @@ impl LL for TensorOps {
         })
     }
 
+    fn convert<E, EInto>(t: &Self::Repr<E>) -> Self::Repr<EInto>
+    where
+        E: Elem + Into<EInto>,
+        EInto: Elem,
+    {
+        t.map(|x| x.clone().into())
+    }
+
     fn shape<E>(t: &Self::Repr<E>) -> &[NonZeroUsize] {
         &t.layout.shape
     }
 
-    fn exp<E: num::Float>(t: &Self::Repr<E>) -> Self::Repr<E> {
+    fn exp<E>(t: &Self::Repr<E>) -> Self::Repr<E>
+    where
+        E: Float,
+    {
         t.map(|x| x.exp())
     }
 
-    fn ln<E: num::Float>(t: &Self::Repr<E>) -> Self::Repr<E> {
+    fn ln<E>(t: &Self::Repr<E>) -> Self::Repr<E>
+    where
+        E: Float,
+    {
         t.map(|x| x.ln())
     }
 
     fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Add<Output = E>,
+        E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Add::add(x.clone(), y.clone()))
     }
 
     fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Sub<Output = E>,
+        E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Sub::sub(x.clone(), y.clone()))
     }
 
     fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Mul<Output = E>,
+        E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Mul::mul(x.clone(), y.clone()))
     }
 
     fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: Clone + ops::Div<Output = E>,
+        E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Div::div(x.clone(), y.clone()))
     }
 
     fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
-        E: num::Float,
+        E: Float,
     {
         lhs.zip(rhs, |&x, &y| num::Float::powf(x, y))
     }
 
     fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<bool>>
     where
-        E: PartialEq,
+        E: Elem + PartialEq,
     {
         lhs.zip(rhs, |x, y| PartialEq::eq(x, y))
     }
 
     fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + num::Zero + std::ops::Add<Output = E>,
+        E: Num,
     {
         t.reduce(
             axes,
@@ -91,7 +109,7 @@ impl LL for TensorOps {
 
     fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
-        E: Clone + PartialOrd + LowerBounded,
+        E: Bool,
     {
         t.reduce(
             axes,
@@ -108,7 +126,7 @@ impl LL for TensorOps {
 
     fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
     where
-        E: Clone,
+        E: Elem,
     {
         match t.layout.reshape(shape) {
             Reshaped::Malformed => None,
@@ -336,6 +354,7 @@ impl Layout {
     /// # Errors
     ///
     /// Returns an error if one of the axes to reduce is invalid.
+    #[allow(clippy::similar_names)]
     fn reduce(&self, axes: &[usize]) -> Option<(Self, Self)> {
         let mut reduced_shape = self.shape.clone();
         for &d in axes {

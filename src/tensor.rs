@@ -1,20 +1,22 @@
 //! An N-dimensional array.
 
-use std::{marker::PhantomData, num::NonZeroUsize, ops};
-
-use num::traits::bounds::LowerBounded;
-
-use crate::ops::{ToCpu, ML};
-
 pub mod cpu;
+pub mod dtype;
+pub mod ops;
+
+use std::{marker::PhantomData, num::NonZeroUsize};
+
+use ops::{ToCpu, ML};
+
+use crate::tensor::dtype::{Elem, Float, Num};
 
 /// An alias for a tensor on the CPU having elements of type `E`.
 pub type Cpu<E> = Tensor<cpu::Tensor<E>, E, cpu::TensorOps>;
 
 /// A high-level tensor representation.
 ///
-/// All methods on this struct are delegated to those in [`ML`], enabling automatic differentiation
-/// and support for multiple hardwares. For convinience, operations are broadcasted by default, and
+/// All methods on this struct are delegated to those in [`ML`], enabling auto-differentiation and
+/// support for multiple hardwares. For convinience, operations are broadcasted by default, and
 /// traits from [`std`] are implemented to overloads common operations for a numeric/container type.
 #[derive(Debug)]
 pub struct Tensor<T, E, Ops> {
@@ -22,51 +24,71 @@ pub struct Tensor<T, E, Ops> {
     _marker: PhantomData<(E, Ops)>,
 }
 
-impl<T, E, Ops> ops::Add<Self> for &Tensor<T, E, Ops>
+impl<T, E, Ops> std::ops::Add<Self> for &Tensor<T, E, Ops>
 where
-    E: Clone + ops::Add<Output = E>,
+    E: Num,
     Ops: ML<Repr<E> = T>,
 {
     type Output = Tensor<T, E, Ops>;
 
     fn add(self, other: Self) -> Self::Output {
-        Tensor::add(self, other).expect("tensors can be broadcasted")
+        Tensor::add(self, other).expect("broadcasted")
     }
 }
 
-impl<T, E, Ops> ops::Sub<Self> for &Tensor<T, E, Ops>
+impl<T, E, Ops> std::ops::Sub<Self> for &Tensor<T, E, Ops>
 where
-    E: Clone + ops::Sub<Output = E>,
+    E: Num,
     Ops: ML<Repr<E> = T>,
 {
     type Output = Tensor<T, E, Ops>;
 
     fn sub(self, other: Self) -> Self::Output {
-        Tensor::sub(self, other).expect("tensors can be broadcasted")
+        Tensor::sub(self, other).expect("broadcasted")
     }
 }
 
-impl<T, E, Ops> ops::Mul<Self> for &Tensor<T, E, Ops>
+impl<T, E, Ops> std::ops::Mul<Self> for &Tensor<T, E, Ops>
 where
-    E: Clone + ops::Mul<Output = E>,
+    E: Num,
     Ops: ML<Repr<E> = T>,
 {
     type Output = Tensor<T, E, Ops>;
 
     fn mul(self, other: Self) -> Self::Output {
-        Tensor::mul(self, other).expect("tensors can be broadcasted")
+        Tensor::mul(self, other).expect("broadcasted")
     }
 }
 
-impl<T, E, Ops> ops::Div<Self> for &Tensor<T, E, Ops>
+impl<T, E, Ops> std::ops::Div<Self> for &Tensor<T, E, Ops>
 where
-    E: Clone + ops::Div<Output = E>,
+    E: Num,
     Ops: ML<Repr<E> = T>,
 {
     type Output = Tensor<T, E, Ops>;
 
     fn div(self, other: Self) -> Self::Output {
-        Tensor::div(self, other).expect("tensors can be broadcasted")
+        Tensor::div(self, other).expect("broadcasted")
+    }
+}
+
+impl<T, E, Ops> Tensor<T, E, Ops> {
+    /// Create a tensor given its raw representation.
+    pub const fn from_raw(raw: T) -> Self {
+        Self {
+            raw,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Return a reference to the tensor's raw representation.
+    pub const fn as_raw(&self) -> &T {
+        &self.raw
+    }
+
+    /// Consume the tensor returning its raw representation.
+    pub fn into_raw(self) -> T {
+        self.raw
     }
 }
 
@@ -80,7 +102,7 @@ where
     /// last, and so on.
     pub fn new(shape: &[NonZeroUsize], data: &[E]) -> Option<Self>
     where
-        E: Clone,
+        E: Elem,
     {
         Some(Self {
             raw: Ops::new(shape, data)?,
@@ -93,18 +115,9 @@ where
     /// This is a special tensor that has no shape.
     pub fn scalar(value: E) -> Option<Self>
     where
-        E: Clone,
+        E: Elem,
     {
         Self::new(&[], &[value])
-    }
-
-    /// Create a tensor given its shape filled with a single value.
-    pub fn fill(shape: &[NonZeroUsize], value: E) -> Option<Self>
-    where
-        E: Clone,
-    {
-        let tensor = Self::new(&vec![NonZeroUsize::MIN; shape.len()], &[value])?;
-        tensor.expand(shape)
     }
 
     /// Return the shape of the tensor.
@@ -116,7 +129,7 @@ where
     #[must_use]
     pub fn exp(&self) -> Self
     where
-        E: num::Float,
+        E: Float,
     {
         Self {
             raw: Ops::exp::<E>(&self.raw),
@@ -128,7 +141,7 @@ where
     #[must_use]
     pub fn ln(&self) -> Self
     where
-        E: num::Float,
+        E: Float,
     {
         Self {
             raw: Ops::ln::<E>(&self.raw),
@@ -136,101 +149,112 @@ where
         }
     }
 
-    /// Add `other` to `self`, element-wise.
+    /// Add `other` to `self`.
     ///
     /// The tensors are broadcasted to the same shape before adding if necessary.
     #[must_use]
     pub fn add(&self, other: &Self) -> Option<Self>
     where
-        E: Clone + ops::Add<Output = E>,
+        E: Num,
     {
         self.broadcast(other, |lhs, rhs| {
             let Some(out) = Ops::add::<E>(lhs, rhs) else {
-                unreachable!("tensors must have the same shape");
+                unreachable!("add is infallible");
             };
             out
         })
     }
 
-    /// Subtract `other` from `self`, element-wise.
+    /// Subtract `other` from `self`.
     ///
     /// The tensors are broadcasted to the same shape before subtracting if necessary.
     pub fn sub(&self, other: &Self) -> Option<Self>
     where
-        E: Clone + ops::Sub<Output = E>,
+        E: Num,
     {
         self.broadcast(other, |lhs, rhs| {
             let Some(out) = Ops::sub::<E>(lhs, rhs) else {
-                unreachable!("tensors must have the same shape");
+                unreachable!("sub is infallible");
             };
             out
         })
     }
 
-    /// Multiply `self` by `other`, element-wise.
+    /// Multiply `self` by `other`.
     ///
     /// The tensors are broadcasted to the same shape before multiplying if necessary.
     pub fn mul(&self, other: &Self) -> Option<Self>
     where
-        E: Clone + ops::Mul<Output = E>,
+        E: Num,
     {
         self.broadcast(other, |lhs, rhs| {
             let Some(out) = Ops::mul::<E>(lhs, rhs) else {
-                unreachable!("tensors must have the same shape");
+                unreachable!("mul is infallible");
             };
             out
         })
     }
 
-    /// Divide `self` by `other`, element-wise.
+    /// Divide `self` by `other`.
     ///
     /// The tensors are broadcasted to the same shape before dividing if necessary.
     pub fn div(&self, other: &Self) -> Option<Self>
     where
-        E: Clone + ops::Div<Output = E>,
+        E: Num,
     {
         self.broadcast(other, |lhs, rhs| {
             let Some(out) = Ops::div::<E>(lhs, rhs) else {
-                unreachable!("tensors must have the same shape");
+                unreachable!("div is infallible");
             };
             out
         })
     }
 
-    /// Raise `self` to the power of `other`, element-wise.
+    /// Raise `self` to the power of `other`.
     ///
     /// The tensors are broadcasted to the same shape before raising if necessary.
     pub fn pow(&self, other: &Self) -> Option<Self>
     where
-        E: num::Float,
+        E: Float,
     {
         self.broadcast(other, |lhs, rhs| {
             let Some(out) = Ops::pow::<E>(lhs, rhs) else {
-                unreachable!("tensors must have the same shape");
+                unreachable!("pow is infallible");
+            };
+            out
+        })
+    }
+
+    /// Compare 'self' with 'other', returning 1s where the elements are equal.
+    ///
+    /// The tensors are broadcasted to the same shape before comparing if necessary.
+    pub fn eq(&self, other: &Self) -> Option<Tensor<<Ops as ML>::Repr<bool>, bool, Ops>>
+    where
+        E: Num,
+    {
+        self.broadcast(other, |lhs, rhs| {
+            let Some(out) = Ops::eq::<E>(lhs, rhs) else {
+                unreachable!("eq is infallible");
             };
             out
         })
     }
 
     /// Compare 'self' with 'other', element-wise, returning 1s where the elements are equal.
-    ///
-    /// The tensors are broadcasted to the same shape before comparing if necessary.
-    pub fn eq(&self, other: &Self) -> Option<Tensor<<Ops as ML>::Repr<bool>, bool, Ops>>
+    pub fn eq_elems(&self, other: &Self) -> Option<Tensor<<Ops as ML>::Repr<bool>, bool, Ops>>
     where
-        E: PartialEq,
+        E: Elem + PartialEq,
     {
-        self.broadcast(other, |lhs, rhs| {
-            let Some(out) = Ops::eq::<E>(lhs, rhs) else {
-                unreachable!("tensors must have the same shape");
-            };
-            out
+        Some(Tensor {
+            raw: Ops::eq::<E>(&self.raw, &other.raw)?,
+            _marker: PhantomData,
         })
     }
 
     /// Reduce along the given axes by summing all elements.
     pub fn sum(&self, axes: &[usize]) -> Option<Self>
     where
-        E: Clone + num::Zero + ops::Add<Output = E>,
+        E: Num,
     {
         Some(Self {
             raw: Ops::sum::<E>(&self.raw, axes)?,
@@ -241,7 +265,7 @@ where
     /// Reduce along the given axes by getting the maximum of all elements.
     pub fn max(&self, axes: &[usize]) -> Option<Self>
     where
-        E: Clone + LowerBounded + PartialOrd,
+        E: Num,
     {
         Some(Self {
             raw: Ops::max::<E>(&self.raw, axes)?,
@@ -252,7 +276,7 @@ where
     /// Reshape the tensor to the given shape, keeping the number of elements unchanged.
     pub fn reshape(&self, shape: &[NonZeroUsize]) -> Option<Self>
     where
-        E: Clone,
+        E: Elem,
     {
         Some(Self {
             raw: Ops::reshape::<E>(&self.raw, shape)?,
@@ -263,7 +287,7 @@ where
     /// Permute the tensor axes according to the given permutation.
     pub fn permute(&self, permutation: &[usize]) -> Option<Self>
     where
-        E: Clone,
+        E: Elem,
     {
         Some(Self {
             raw: Ops::permute::<E>(&self.raw, permutation)?,
@@ -274,7 +298,7 @@ where
     /// Expand singleton axes in a tensor to a larger size.
     pub fn expand(&self, shape: &[NonZeroUsize]) -> Option<Self>
     where
-        E: Clone,
+        E: Num,
     {
         Some(Self {
             raw: Ops::expand::<E>(&self.raw, shape)?,
@@ -282,10 +306,21 @@ where
         })
     }
 
+    /// Create a tensor given its shape filled with a single value.
+    pub fn fill(shape: &[NonZeroUsize], value: E) -> Self
+    where
+        E: Num,
+    {
+        Self {
+            raw: Ops::fill(shape, value),
+            _marker: PhantomData,
+        }
+    }
+
     /// Swaps 2 dimensions of the tensor without cloning its data.
     pub fn transpose(&self, axis0: usize, axis1: usize) -> Option<Self>
     where
-        E: Clone,
+        E: Elem,
     {
         let mut permutation: Vec<_> = (0..self.shape().len()).collect();
         permutation.swap(axis0, axis1);
@@ -296,12 +331,12 @@ where
     #[must_use]
     pub fn squeeze(&self) -> Self
     where
-        E: Clone,
+        E: Elem,
     {
         let mut shape = self.shape().to_vec();
         shape.retain(|&sz| sz != NonZeroUsize::MIN);
         let Some(reshaped) = self.reshape(&shape) else {
-            unreachable!("tensor must be reshaped");
+            unreachable!("squeeze is infallible");
         };
         reshaped
     }
@@ -316,9 +351,10 @@ where
     ///   After matrix multiplication the prepended 1 is removed.
     /// + If the second argument is 1-D, it is promoted to a matrix by appending a 1 to its axes.
     ///   After matrix multiplication the appended 1 is removed.
+    #[allow(clippy::similar_names)]
     pub fn matmul(&self, other: &Self) -> Option<Self>
     where
-        E: Clone + num::Zero + ops::Mul<Output = E>,
+        E: Num,
     {
         let mut lhs_shape = self.shape().to_vec();
         let mut rhs_shape = other.shape().to_vec();
@@ -372,6 +408,7 @@ where
         op: F,
     ) -> Option<Tensor<TOut, EOut, OpsOut>>
     where
+        E: Num,
         F: Fn(&T, &T) -> TOut,
     {
         // Determine which shape has more dimensions.
@@ -424,15 +461,13 @@ where
 mod tests {
     use std::num::NonZeroUsize;
 
-    use crate::{
-        ops::ToCpu,
-        tensor::{Cpu, Tensor},
-    };
+    use crate::tensor::{ops::ToCpu, Cpu, Tensor};
 
     fn shape<const N: usize>(shape: [usize; N]) -> [NonZeroUsize; N] {
         shape.map(|x| NonZeroUsize::new(x).unwrap())
     }
 
+    #[allow(clippy::similar_names)]
     fn linspace(start: f32, stop: f32, num: u16) -> Vec<f32> {
         let step = if num > 1 {
             (stop - start) / f32::from(num - 1)
@@ -471,7 +506,7 @@ mod tests {
     #[test]
     fn bool_tensor() {
         let t = Cpu::<bool>::new(&shape([2, 3]), &[true, true, false, false, true, true]).unwrap();
-        let r = &t.eq(&t).unwrap();
+        let r = &t.eq_elems(&t).unwrap();
         assert_eq!(r.shape(), &shape([2, 3]));
         assert_eq!(r.ravel(), &[true, true, true, true, true, true]);
     }

@@ -15,7 +15,6 @@
     missing_debug_implementations,
     rustdoc::all
 )]
-#![allow(clippy::similar_names)]
 
-pub mod ops;
+pub mod autodiff;
 pub mod tensor;
