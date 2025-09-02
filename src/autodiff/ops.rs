@@ -13,7 +13,7 @@ where
     Self: Sized,
 {
     type Args: ?Sized;
-    fn call(arg: &T, args: &Self::Args) -> Option<(T, Self)>;
+    fn call(arg: &T, args: &Self::Args) -> (T, Self);
 }
 
 /// Function to compute the gradient flow of an unary function.
@@ -27,7 +27,7 @@ pub trait Binary<T>: BinaryDiff<T>
 where
     Self: Sized,
 {
-    fn call(lhs: &T, rhs: &T) -> Option<(T, Self)>;
+    fn call(lhs: &T, rhs: &T) -> (T, Self);
 }
 
 /// Function to compute the gradient flow of a binary function.
@@ -52,15 +52,15 @@ where
 {
     type Args = ();
 
-    fn call(arg: &T, (): &Self::Args) -> Option<(T, Self)> {
+    fn call(arg: &T, (): &Self::Args) -> (T, Self) {
         let out = Ops::exp::<E>(arg);
-        Some((
+        (
             out.clone(),
             Self {
                 out,
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -70,7 +70,7 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn df(&self, d: &T) -> T {
-        Ops::mul::<E>(d, &self.out).expect("df is infallible")
+        Ops::mul::<E>(d, &self.out)
     }
 }
 
@@ -87,15 +87,14 @@ where
 {
     type Args = ();
 
-    fn call(arg: &T, (): &Self::Args) -> Option<(T, Self)> {
-        let r = Ops::ln::<E>(arg);
-        Some((
-            r,
+    fn call(arg: &T, (): &Self::Args) -> (T, Self) {
+        (
+            Ops::ln::<E>(arg),
             Self {
                 arg: arg.clone(),
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -105,7 +104,7 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn df(&self, d: &T) -> T {
-        Ops::div::<E>(d, &self.arg).expect("df is infallible")
+        Ops::div::<E>(d, &self.arg)
     }
 }
 
@@ -117,9 +116,8 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> Option<(T, Self)> {
-        let out = Ops::add::<E>(lhs, rhs)?;
-        Some((out, Self(PhantomData)))
+    fn call(lhs: &T, rhs: &T) -> (T, Self) {
+        (Ops::add::<E>(lhs, rhs), Self(PhantomData))
     }
 }
 
@@ -144,9 +142,8 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> Option<(T, Self)> {
-        let out = Ops::sub::<E>(lhs, rhs)?;
-        Some((out, Self(PhantomData)))
+    fn call(lhs: &T, rhs: &T) -> (T, Self) {
+        (Ops::sub::<E>(lhs, rhs), Self(PhantomData))
     }
 }
 
@@ -177,16 +174,15 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> Option<(T, Self)> {
-        let out = Ops::mul::<E>(lhs, rhs)?;
-        Some((
-            out,
+    fn call(lhs: &T, rhs: &T) -> (T, Self) {
+        (
+            Ops::mul::<E>(lhs, rhs),
             Self {
                 lhs: lhs.clone(),
                 rhs: rhs.clone(),
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -196,11 +192,11 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn dfda(&self, d: &T) -> T {
-        Ops::mul::<E>(d, &self.rhs).expect("dfda is infallible")
+        Ops::mul::<E>(d, &self.rhs)
     }
 
     fn dfdb(&self, d: &T) -> T {
-        Ops::mul::<E>(d, &self.lhs).expect("dfdb is infallible")
+        Ops::mul::<E>(d, &self.lhs)
     }
 }
 
@@ -216,16 +212,15 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> Option<(T, Self)> {
-        let out = Ops::div::<E>(lhs, rhs)?;
-        Some((
-            out,
+    fn call(lhs: &T, rhs: &T) -> (T, Self) {
+        (
+            Ops::div::<E>(lhs, rhs),
             Self {
                 lhs: lhs.clone(),
                 rhs: rhs.clone(),
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -235,15 +230,17 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn dfda(&self, d: &T) -> T {
-        Ops::div::<E>(d, &self.rhs).expect("dfda is infallible")
+        Ops::div::<E>(d, &self.rhs)
     }
 
     fn dfdb(&self, d: &T) -> T {
-        Ops::mul::<E>(&self.rhs, &self.rhs)
-            .and_then(|rhs_squared| Ops::div::<E>(&self.lhs, &rhs_squared))
-            .map(|t| Ops::neg::<E>(&t))
-            .and_then(|t| Ops::mul::<E>(d, &t))
-            .expect("dfdb is infallible")
+        Ops::mul::<E>(
+            d,
+            &Ops::neg::<E>(&Ops::div::<E>(
+                &self.lhs,
+                &Ops::mul::<E>(&self.rhs, &self.rhs),
+            )),
+        )
     }
 }
 
@@ -260,9 +257,9 @@ where
     E: Float,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> Option<(T, Self)> {
-        let out = Ops::pow::<E>(lhs, rhs)?;
-        Some((
+    fn call(lhs: &T, rhs: &T) -> (T, Self) {
+        let out = Ops::pow::<E>(lhs, rhs);
+        (
             out.clone(),
             Self {
                 lhs: lhs.clone(),
@@ -270,7 +267,7 @@ where
                 out,
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -280,16 +277,14 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn dfda(&self, d: &T) -> T {
-        Ops::div::<E>(&self.out, &self.lhs)
-            .and_then(|t| Ops::mul::<E>(&self.rhs, &t))
-            .and_then(|t| Ops::mul::<E>(d, &t))
-            .expect("dfda is infallible")
+        Ops::mul::<E>(
+            d,
+            &Ops::mul::<E>(&self.rhs, &Ops::div::<E>(&self.out, &self.lhs)),
+        )
     }
 
     fn dfdb(&self, d: &T) -> T {
-        Ops::mul::<E>(&self.out, &Ops::ln::<E>(&self.lhs))
-            .and_then(|t| Ops::mul::<E>(d, &t))
-            .expect("dfdb is infallible")
+        Ops::mul::<E>(d, &Ops::mul::<E>(&self.out, &Ops::ln::<E>(&self.lhs)))
     }
 }
 
@@ -306,16 +301,14 @@ where
 {
     type Args = [usize];
 
-    fn call(arg: &T, axes: &Self::Args) -> Option<(T, Self)> {
-        let out = Ops::sum::<E>(arg, axes)?;
-        let shape = Ops::shape::<E>(arg).into();
-        Some((
-            out,
+    fn call(arg: &T, axes: &Self::Args) -> (T, Self) {
+        (
+            Ops::sum::<E>(arg, axes),
             Self {
-                shape,
+                shape: Ops::shape::<E>(arg).into(),
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -325,7 +318,7 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn df(&self, d: &T) -> T {
-        Ops::expand::<E>(d, &self.shape).expect("df is infallible")
+        Ops::expand::<E>(d, &self.shape)
     }
 }
 
@@ -343,16 +336,16 @@ where
 {
     type Args = [usize];
 
-    fn call(arg: &T, axes: &Self::Args) -> Option<(T, Self)> {
-        let out = Ops::max::<E>(arg, axes)?;
-        Some((
+    fn call(arg: &T, axes: &Self::Args) -> (T, Self) {
+        let out = Ops::max::<E>(arg, axes);
+        (
             out.clone(),
             Self {
                 arg: arg.clone(),
                 out,
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -362,9 +355,9 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn df(&self, d: &T) -> T {
-        let t_shape = Ops::shape::<E>(&self.arg);
         let d_shape = Ops::shape::<E>(d);
-        assert_eq!(t_shape.len(), d_shape.len());
+        let t_shape = Ops::shape::<E>(&self.arg);
+        assert_eq!(d_shape.len(), t_shape.len());
 
         let reduced_axes: Box<[usize]> = t_shape
             .iter()
@@ -373,19 +366,16 @@ where
             .filter_map(|(idx, (x, y))| if x == y { None } else { Some(idx) })
             .collect();
 
-        Ops::expand::<E>(&self.out, t_shape)
-            .and_then(|out_expanded| Ops::eq::<E>(&self.arg, &out_expanded))
-            .map(|eq_bools| Ops::convert::<bool, E>(&eq_bools))
-            .and_then(|eq_ones| {
-                Ops::sum::<E>(&eq_ones, &reduced_axes)
-                    .and_then(|eq_reduced| Ops::expand::<E>(&eq_reduced, t_shape))
-                    .and_then(|eq_expanded| Ops::div::<E>(&eq_ones, &eq_expanded))
-            })
-            .and_then(|eq_sum| {
-                Ops::expand::<E>(d, t_shape)
-                    .and_then(|d_expanded| Ops::mul::<E>(&eq_sum, &d_expanded))
-            })
-            .expect("df is infallible")
+        let eq = Ops::convert::<bool, E>(&Ops::eq::<E>(
+            &self.arg,
+            &Ops::expand::<E>(&self.out, t_shape),
+        ));
+        let eq_ratio = Ops::div::<E>(
+            &eq,
+            &Ops::expand::<E>(&Ops::sum::<E>(&eq, &reduced_axes), t_shape),
+        );
+        let d_expanded = Ops::expand::<E>(d, t_shape);
+        Ops::mul::<E>(&eq_ratio, &d_expanded)
     }
 }
 
@@ -402,15 +392,14 @@ where
 {
     type Args = [NonZeroUsize];
 
-    fn call(arg: &T, shape: &Self::Args) -> Option<(T, Self)> {
-        let out = Ops::reshape::<E>(arg, shape)?;
-        Some((
-            out,
+    fn call(arg: &T, shape: &Self::Args) -> (T, Self) {
+        (
+            Ops::reshape::<E>(arg, shape),
             Self {
                 shape: shape.into(),
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -420,7 +409,7 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn df(&self, d: &T) -> T {
-        Ops::reshape::<E>(d, &self.shape).expect("df is infallible")
+        Ops::reshape::<E>(d, &self.shape)
     }
 }
 
@@ -436,15 +425,14 @@ where
 {
     type Args = [usize];
 
-    fn call(arg: &T, permutation: &Self::Args) -> Option<(T, Self)> {
-        let out = Ops::permute::<E>(arg, permutation)?;
-        Some((
-            out,
+    fn call(arg: &T, permutation: &Self::Args) -> (T, Self) {
+        (
+            Ops::permute::<E>(arg, permutation),
             Self {
                 permutation: permutation.into(),
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -459,7 +447,7 @@ where
             permutation.sort_by_key(|&(_, axis)| *axis);
             permutation.into_iter().map(|(idx, _)| idx).collect()
         };
-        Ops::permute::<E>(d, &permutation_rev).expect("df is infallible")
+        Ops::permute::<E>(d, &permutation_rev)
     }
 }
 
@@ -475,15 +463,14 @@ where
 {
     type Args = [NonZeroUsize];
 
-    fn call(arg: &T, shape: &Self::Args) -> Option<(T, Self)> {
-        let out = Ops::expand::<E>(arg, shape)?;
-        Some((
-            out,
+    fn call(arg: &T, shape: &Self::Args) -> (T, Self) {
+        (
+            Ops::expand::<E>(arg, shape),
             Self {
                 shape: shape.into(),
                 _marker: PhantomData,
             },
-        ))
+        )
     }
 }
 
@@ -494,7 +481,7 @@ where
 {
     fn df(&self, d: &T) -> T {
         let d_shape = Ops::shape::<E>(d);
-        assert_eq!(self.shape.len(), d_shape.len());
+        assert_eq!(d_shape.len(), self.shape.len());
 
         let expanded_axes: Box<[usize]> = self
             .shape
@@ -504,6 +491,6 @@ where
             .filter_map(|(idx, (x, y))| if x == y { None } else { Some(idx) })
             .collect();
 
-        Ops::sum::<E>(d, &expanded_axes).expect("df is infallible")
+        Ops::sum::<E>(d, &expanded_axes)
     }
 }

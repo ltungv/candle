@@ -165,7 +165,7 @@ where
         T: 'static + Clone,
         E: Num,
     {
-        assert_eq!(self.result_shape, Ops::shape::<E>(adjoint));
+        assert_eq!(Ops::shape::<E>(adjoint), self.result_shape);
         let mut adjoints: Vec<_> = iter::repeat_with(Adjoint::<T, E, Ops>::empty)
             .take(adjoint_index + 1)
             .collect();
@@ -243,7 +243,7 @@ impl<T, E, Ops> Adjoint<T, E, Ops> {
     {
         match self.df.as_mut() {
             None => self.df = Some(df),
-            Some(c) => *c = Ops::add::<E>(c, &df).expect("accumulate is infallible"),
+            Some(c) => *c = Ops::add::<E>(c, &df),
         }
     }
 }
@@ -258,11 +258,11 @@ where
 {
     type Repr<E> = Reverse<Ops::Repr<E>>;
 
-    fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Option<Self::Repr<E>>
+    fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Self::Repr<E>
     where
         E: Elem,
     {
-        Ops::new::<E>(shape, data).map(Reverse::Lifted)
+        Reverse::Lifted(Ops::new::<E>(shape, data))
     }
 
     fn convert<E, EInto>(t: &Self::Repr<E>) -> Self::Repr<EInto>
@@ -282,7 +282,6 @@ where
         E: Float,
     {
         t.unary::<Exp<Ops::Repr<E>, E, Ops>>(&())
-            .expect("exp is infallible")
     }
 
     fn ln<E>(t: &Self::Repr<E>) -> Self::Repr<E>
@@ -290,80 +289,79 @@ where
         E: Float,
     {
         t.unary::<Ln<Ops::Repr<E>, E, Ops>>(&())
-            .expect("ln is infallible")
     }
 
-    fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.binary::<Add<E, Ops>>(rhs)
     }
 
-    fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.binary::<Sub<E, Ops>>(rhs)
     }
 
-    fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.binary::<Mul<Ops::Repr<E>, E, Ops>>(rhs)
     }
 
-    fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.binary::<Div<Ops::Repr<E>, E, Ops>>(rhs)
     }
 
-    fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Float,
     {
         lhs.binary::<Pow<Ops::Repr<E>, E, Ops>>(rhs)
     }
 
-    fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<bool>>
+    fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<bool>
     where
         E: Elem + PartialEq,
     {
-        Ops::eq::<E>(lhs.primal(), rhs.primal()).map(Reverse::Lifted)
+        Reverse::Lifted(Ops::eq::<E>(lhs.primal(), rhs.primal()))
     }
 
-    fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
+    fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Self::Repr<E>
     where
         E: Num,
     {
         t.unary::<Sum<E, Ops>>(axes)
     }
 
-    fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
+    fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Self::Repr<E>
     where
         E: Num,
     {
         t.unary::<Max<Ops::Repr<E>, E, Ops>>(axes)
     }
 
-    fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
+    fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Self::Repr<E>
     where
         E: Elem,
     {
         t.unary::<Reshape<E, Ops>>(shape)
     }
 
-    fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Option<Self::Repr<E>>
+    fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Self::Repr<E>
     where
         E: Elem,
     {
         t.unary::<Permute<E, Ops>>(permutation)
     }
 
-    fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
+    fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Self::Repr<E>
     where
         E: Num,
     {
@@ -389,63 +387,63 @@ impl<T> Reverse<T> {
         }
     }
 
-    fn unary<Op>(&self, args: &Op::Args) -> Option<Self>
+    fn unary<Op>(&self, args: &Op::Args) -> Self
     where
         Op: 'static + Unary<T>,
     {
         match self {
             Self::Lifted(primal) => {
-                let (primal, _) = Op::call(primal, args)?;
-                Some(Self::Lifted(primal))
+                let (primal, _) = Op::call(primal, args);
+                Self::Lifted(primal)
             }
 
             Self::Traced(trace) => {
-                let (primal, grad) = Op::call(&trace.primal, args)?;
-                Some(Self::Traced(Trace::new(
+                let (primal, grad) = Op::call(&trace.primal, args);
+                Self::Traced(Trace::new(
                     &trace.tape,
                     TapeNode::Unary(Box::new(grad), trace.index),
                     primal,
-                )))
+                ))
             }
         }
     }
 
-    fn binary<Op>(&self, other: &Self) -> Option<Self>
+    fn binary<Op>(&self, other: &Self) -> Self
     where
         Op: 'static + Binary<T>,
     {
         match (self, other) {
             (Self::Lifted(lhs), Self::Lifted(rhs)) => {
-                let (primal, _) = Op::call(lhs, rhs)?;
-                Some(Self::Lifted(primal))
+                let (primal, _) = Op::call(lhs, rhs);
+                Self::Lifted(primal)
             }
 
             (Self::Lifted(lhs), Self::Traced(rhs)) => {
-                let (primal, grad) = Op::call(lhs, &rhs.primal)?;
-                Some(Self::Traced(Trace::new(
+                let (primal, grad) = Op::call(lhs, &rhs.primal);
+                Self::Traced(Trace::new(
                     &rhs.tape,
                     TapeNode::BinaryDB(Box::new(grad), rhs.index),
                     primal,
-                )))
+                ))
             }
 
             (Self::Traced(lhs), Self::Lifted(rhs)) => {
-                let (primal, grad) = Op::call(&lhs.primal, rhs)?;
-                Some(Self::Traced(Trace::new(
+                let (primal, grad) = Op::call(&lhs.primal, rhs);
+                Self::Traced(Trace::new(
                     &lhs.tape,
                     TapeNode::BinaryDA(Box::new(grad), lhs.index),
                     primal,
-                )))
+                ))
             }
 
             (Self::Traced(lhs), Self::Traced(rhs)) => {
                 assert!(Rc::ptr_eq(&lhs.tape, &rhs.tape));
-                let (primal, grad) = Op::call(&lhs.primal, &rhs.primal)?;
-                Some(Self::Traced(Trace::new(
+                let (primal, grad) = Op::call(&lhs.primal, &rhs.primal);
+                Self::Traced(Trace::new(
                     &lhs.tape,
                     TapeNode::Binary(Box::new(grad), lhs.index, rhs.index),
                     primal,
-                )))
+                ))
             }
         }
     }

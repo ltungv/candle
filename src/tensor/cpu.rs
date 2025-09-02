@@ -14,18 +14,22 @@ pub struct TensorOps;
 impl LL for TensorOps {
     type Repr<E> = Tensor<E>;
 
-    fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Option<Self::Repr<E>>
+    fn new<E>(shape: &[NonZeroUsize], data: &[E]) -> Self::Repr<E>
     where
         E: Elem,
     {
         let layout = Layout::from(shape);
-        if layout.capacity().get() != data.len() {
-            return None;
-        }
-        Some(Tensor {
+        assert_eq!(
+            layout.capacity().get(),
+            data.len(),
+            "unexpected element count (want {}, but got {})",
+            layout.capacity(),
+            data.len()
+        );
+        Tensor {
             buffer: Arc::from(data.to_vec()),
             layout,
-        })
+        }
     }
 
     fn convert<E, EInto>(t: &Self::Repr<E>) -> Self::Repr<EInto>
@@ -54,49 +58,49 @@ impl LL for TensorOps {
         t.map(|x| x.ln())
     }
 
-    fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Add::add(x.clone(), y.clone()))
     }
 
-    fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Sub::sub(x.clone(), y.clone()))
     }
 
-    fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Mul::mul(x.clone(), y.clone()))
     }
 
-    fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
         lhs.zip(rhs, |x, y| ops::Div::div(x.clone(), y.clone()))
     }
 
-    fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
+    fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Float,
     {
         lhs.zip(rhs, |&x, &y| num::Float::powf(x, y))
     }
 
-    fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<bool>>
+    fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<bool>
     where
         E: Elem + PartialEq,
     {
         lhs.zip(rhs, |x, y| PartialEq::eq(x, y))
     }
 
-    fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
+    fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Self::Repr<E>
     where
         E: Num,
     {
@@ -107,7 +111,7 @@ impl LL for TensorOps {
         )
     }
 
-    fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
+    fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Self::Repr<E>
     where
         E: Bool,
     {
@@ -124,37 +128,36 @@ impl LL for TensorOps {
         )
     }
 
-    fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
+    fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Self::Repr<E>
     where
         E: Elem,
     {
         match t.layout.reshape(shape) {
-            Reshaped::Malformed => None,
-            Reshaped::Allocate => Some(Tensor {
+            Reshaped::Copy => Tensor {
                 buffer: t.iter().cloned().collect(),
                 layout: Layout::from(shape),
-            }),
-            Reshaped::Reuse(layout) => Some(Tensor {
+            },
+            Reshaped::InPlace(layout) => Tensor {
                 buffer: t.buffer.clone(),
                 layout,
-            }),
+            },
         }
     }
 
-    fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Option<Self::Repr<E>> {
-        let layout = t.layout.permute(permutation)?;
-        Some(Tensor {
+    fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Self::Repr<E> {
+        let layout = t.layout.permute(permutation);
+        Tensor {
             buffer: t.buffer.clone(),
             layout,
-        })
+        }
     }
 
-    fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>> {
-        let layout = t.layout.expand(shape)?;
-        Some(Tensor {
+    fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Self::Repr<E> {
+        let layout = t.layout.expand(shape);
+        Tensor {
             buffer: t.buffer.clone(),
             layout,
-        })
+        }
     }
 }
 
@@ -220,26 +223,28 @@ impl<E> Tensor<E> {
         }
     }
 
-    fn zip<F, T>(&self, other: &Self, op: F) -> Option<Tensor<T>>
+    fn zip<F, T>(&self, other: &Self, op: F) -> Tensor<T>
     where
         F: Fn(&E, &E) -> T,
     {
-        if self.layout.shape != other.layout.shape {
-            return None;
-        }
+        assert_eq!(
+            self.layout.shape, other.layout.shape,
+            "zip: incompatible shapes ({:?} and {:?})",
+            self.layout.shape, other.layout.shape
+        );
         let buffer = self.iter().zip(other.iter()).map(|(x, y)| op(x, y));
-        Some(Tensor {
+        Tensor {
             buffer: buffer.collect(),
             layout: Layout::from(self.layout.shape.clone()),
-        })
+        }
     }
 
-    fn reduce<D, F, T>(&self, axes: &[usize], default: D, op: F) -> Option<Tensor<T>>
+    fn reduce<D, F, T>(&self, axes: &[usize], default: D, op: F) -> Tensor<T>
     where
         D: Fn() -> T,
         F: Fn(&T, &E) -> T,
     {
-        let (layout, reducer) = self.layout.reduce(axes)?;
+        let (layout, reducer) = self.layout.reduce(axes);
         let mut buffer: Vec<_> = iter::repeat_with(default)
             .take(layout.capacity().get())
             .collect();
@@ -248,10 +253,10 @@ impl<E> Tensor<E> {
             let src_pos = self.layout.translate(&idx);
             buffer[dst_pos] = op(&buffer[dst_pos], &self.buffer[src_pos]);
         }
-        Some(Tensor {
+        Tensor {
             buffer: buffer.into(),
             layout,
-        })
+        }
     }
 }
 
@@ -312,7 +317,7 @@ impl<'a> IntoIterator for &'a Layout {
 impl Layout {
     /// Creates a contiguous row-major layout based on the given shape.
     fn contiguous(shape: Box<[NonZeroUsize]>) -> Self {
-        assert!(!shape.is_empty());
+        assert!(!shape.is_empty(), "shape must not be empty");
         // Go backwards through the shape to calculate the strides. The last strides is always 1.
         let mut strides = vec![1; shape.len()].into_boxed_slice();
         for idx in (0..shape.len() - 1).rev() {
@@ -350,17 +355,10 @@ impl Layout {
     /// Returns 2 layouts where the first is reduced layout and the second is the reducer layout.
     /// The reducer layout is used to map an index in the original tensor to a memory position in
     /// the reduced tensor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if one of the axes to reduce is invalid.
     #[allow(clippy::similar_names)]
-    fn reduce(&self, axes: &[usize]) -> Option<(Self, Self)> {
+    fn reduce(&self, axes: &[usize]) -> (Self, Self) {
         let mut reduced_shape = self.shape.clone();
         for &d in axes {
-            if d >= reduced_shape.len() {
-                return None;
-            }
             reduced_shape[d] = NonZeroUsize::MIN;
         }
         let reduced_layout = Self::from(reduced_shape);
@@ -372,7 +370,7 @@ impl Layout {
             // to the same memory position in the reduced tensor.
             reducer_layout.strides[d] = 0;
         }
-        Some((reduced_layout, reducer_layout))
+        (reduced_layout, reducer_layout)
     }
 
     /// Returns a new layout where all singleton axes are removed.
@@ -396,22 +394,18 @@ impl Layout {
     /// # Errors
     ///
     /// Returns an error if one of the dimensions is invalid.
-    fn permute(&self, permutation: &[usize]) -> Option<Self> {
-        let mut shape = Vec::with_capacity(self.shape.len());
-        let mut strides = Vec::with_capacity(self.strides.len());
-        let mut axis_flags = vec![false; self.shape.len()];
-        for &axis in permutation {
-            if axis >= self.shape.len() || axis_flags[axis] {
-                return None;
-            }
+    fn permute(&self, permutation: &[usize]) -> Self {
+        let rank = self.shape.len();
+        let mut shape = Vec::with_capacity(rank);
+        let mut strides = Vec::with_capacity(rank);
+        for &axis in &permutation[..rank] {
             shape.push(self.shape[axis]);
             strides.push(self.strides[axis]);
-            axis_flags[axis] = true;
         }
-        Some(Self {
+        Self {
             shape: Box::from(shape),
             strides: Box::from(strides),
-        })
+        }
     }
 
     /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
@@ -427,10 +421,7 @@ impl Layout {
     /// # Errors
     ///
     /// Returns an error if the layout cannot be expanded to the new shape.
-    fn expand(&self, new_shape: &[NonZeroUsize]) -> Option<Self> {
-        if new_shape.len() < self.shape.len() {
-            return None;
-        }
+    fn expand(&self, new_shape: &[NonZeroUsize]) -> Self {
         let mut new_strides = vec![0; new_shape.len()];
         for dim in 0..self.shape.len() {
             let old_idx = self.shape.len() - dim - 1;
@@ -440,13 +431,16 @@ impl Layout {
             } else if self.shape[old_idx] == NonZeroUsize::MIN {
                 new_strides[new_idx] = 0;
             } else {
-                return None;
+                panic!(
+                    "expand: incompatible shapes ({:?} and {:?})",
+                    self.shape, new_shape
+                );
             }
         }
-        Some(Self {
+        Self {
             shape: Box::from(new_shape),
             strides: Box::from(new_strides),
-        })
+        }
     }
 
     /// Returns a new layout for a tensor having the same number of elements
@@ -457,15 +451,20 @@ impl Layout {
     ///
     /// Returns an error if the new shape is incompatible with the layout.
     fn reshape(&self, new_shape: &[NonZeroUsize]) -> Reshaped {
-        if self.capacity()
-            != new_shape
-                .iter()
-                .copied()
-                .reduce(|x, y| x.checked_mul(y).expect("no overflow"))
-                .unwrap_or(NonZeroUsize::MIN)
-        {
-            return Reshaped::Malformed;
-        }
+        let new_capacity = new_shape
+            .iter()
+            .copied()
+            .reduce(|x, y| x.checked_mul(y).expect("no overflow"))
+            .unwrap_or(NonZeroUsize::MIN);
+
+        assert_eq!(
+            new_capacity,
+            self.capacity(),
+            "reshape: incompatible shapes ({:?} and {:?})",
+            self.shape,
+            new_shape
+        );
+
         let old_layout = self.squeeze();
         let mut new_strides = vec![1; new_shape.len()];
         let mut old_dim = 0;
@@ -494,7 +493,7 @@ impl Layout {
             for dim in old_dim_prev..old_dim {
                 let expected_stride = old_layout.strides[dim + 1] * old_layout.shape[dim + 1].get();
                 if old_layout.strides[dim] != expected_stride {
-                    return Reshaped::Allocate;
+                    return Reshaped::Copy;
                 }
             }
             // Build a strides backward.
@@ -512,7 +511,7 @@ impl Layout {
                 *stride = last_stride;
             }
         }
-        Reshaped::Reuse(Self {
+        Reshaped::InPlace(Self {
             shape: Box::from(new_shape),
             strides: Box::from(new_strides),
         })
@@ -548,7 +547,6 @@ impl Iterator for IndexIter<'_> {
 }
 
 enum Reshaped {
-    Malformed,
-    Allocate,
-    Reuse(Layout),
+    Copy,
+    InPlace(Layout),
 }

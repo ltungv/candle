@@ -32,7 +32,7 @@ where
     type Output = Tensor<T, E, Ops>;
 
     fn add(self, other: Self) -> Self::Output {
-        Tensor::add(self, other).expect("broadcasted")
+        self.broadcast(other, Ops::add::<E>)
     }
 }
 
@@ -44,7 +44,7 @@ where
     type Output = Tensor<T, E, Ops>;
 
     fn sub(self, other: Self) -> Self::Output {
-        Tensor::sub(self, other).expect("broadcasted")
+        self.broadcast(other, Ops::sub::<E>)
     }
 }
 
@@ -56,7 +56,7 @@ where
     type Output = Tensor<T, E, Ops>;
 
     fn mul(self, other: Self) -> Self::Output {
-        Tensor::mul(self, other).expect("broadcasted")
+        self.broadcast(other, Ops::mul::<E>)
     }
 }
 
@@ -68,7 +68,7 @@ where
     type Output = Tensor<T, E, Ops>;
 
     fn div(self, other: Self) -> Self::Output {
-        Tensor::div(self, other).expect("broadcasted")
+        self.broadcast(other, Ops::div::<E>)
     }
 }
 
@@ -100,14 +100,14 @@ where
     ///
     /// The order of the elements in `data` is in increasing order of the last axis, then the second
     /// last, and so on.
-    pub fn new(shape: &[NonZeroUsize], data: &[E]) -> Option<Self>
+    pub fn new(shape: &[NonZeroUsize], data: &[E]) -> Self
     where
         E: Elem,
     {
-        Some(Self {
-            raw: Ops::new(shape, data)?,
+        Self {
+            raw: Ops::new(shape, data),
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Create a scalar holding the given value.
@@ -117,10 +117,7 @@ where
     where
         E: Elem,
     {
-        let Some(tensor) = Self::new(&[], &[value]) else {
-            unreachable!("scalar is infallible")
-        };
-        tensor
+        Self::new(&[], &[value])
     }
 
     /// Return the shape of the tensor.
@@ -192,106 +189,36 @@ where
         out
     }
 
-    /// Add `other` to `self`.
-    ///
-    /// The tensors are broadcasted to the same shape before adding if necessary.
-    #[must_use]
-    pub fn add(&self, other: &Self) -> Option<Self>
-    where
-        E: Num,
-    {
-        self.broadcast(other, |lhs, rhs| {
-            let Some(out) = Ops::add::<E>(lhs, rhs) else {
-                unreachable!("add is infallible");
-            };
-            out
-        })
-    }
-
-    /// Subtract `other` from `self`.
-    ///
-    /// The tensors are broadcasted to the same shape before subtracting if necessary.
-    pub fn sub(&self, other: &Self) -> Option<Self>
-    where
-        E: Num,
-    {
-        self.broadcast(other, |lhs, rhs| {
-            let Some(out) = Ops::sub::<E>(lhs, rhs) else {
-                unreachable!("sub is infallible");
-            };
-            out
-        })
-    }
-
-    /// Multiply `self` by `other`.
-    ///
-    /// The tensors are broadcasted to the same shape before multiplying if necessary.
-    pub fn mul(&self, other: &Self) -> Option<Self>
-    where
-        E: Num,
-    {
-        self.broadcast(other, |lhs, rhs| {
-            let Some(out) = Ops::mul::<E>(lhs, rhs) else {
-                unreachable!("mul is infallible");
-            };
-            out
-        })
-    }
-
-    /// Divide `self` by `other`.
-    ///
-    /// The tensors are broadcasted to the same shape before dividing if necessary.
-    pub fn div(&self, other: &Self) -> Option<Self>
-    where
-        E: Num,
-    {
-        self.broadcast(other, |lhs, rhs| {
-            let Some(out) = Ops::div::<E>(lhs, rhs) else {
-                unreachable!("div is infallible");
-            };
-            out
-        })
-    }
-
     /// Raise `self` to the power of `other`.
     ///
     /// The tensors are broadcasted to the same shape before raising if necessary.
-    pub fn pow(&self, other: &Self) -> Option<Self>
+    #[must_use]
+    pub fn pow(&self, other: &Self) -> Self
     where
         E: Float,
     {
-        self.broadcast(other, |lhs, rhs| {
-            let Some(out) = Ops::pow::<E>(lhs, rhs) else {
-                unreachable!("pow is infallible");
-            };
-            out
-        })
+        self.broadcast(other, Ops::pow::<E>)
     }
 
     /// Compare 'self' with 'other', returning 1s where the elements are equal.
     ///
     /// The tensors are broadcasted to the same shape before comparing if necessary.
-    pub fn eq(&self, other: &Self) -> Option<Tensor<<Ops as ML>::Repr<bool>, bool, Ops>>
+    pub fn eq(&self, other: &Self) -> Tensor<<Ops as ML>::Repr<bool>, bool, Ops>
     where
         E: Num,
     {
-        self.broadcast(other, |lhs, rhs| {
-            let Some(out) = Ops::eq::<E>(lhs, rhs) else {
-                unreachable!("eq is infallible");
-            };
-            out
-        })
+        self.broadcast(other, Ops::eq::<E>)
     }
 
     /// Compare 'self' with 'other', element-wise, returning 1s where the elements are equal.
-    pub fn eq_elems(&self, other: &Self) -> Option<Tensor<<Ops as ML>::Repr<bool>, bool, Ops>>
+    pub fn eq_elements(&self, other: &Self) -> Tensor<<Ops as ML>::Repr<bool>, bool, Ops>
     where
         E: Elem + PartialEq,
     {
-        Some(Tensor {
-            raw: Ops::eq::<E>(&self.raw, &other.raw)?,
+        Tensor {
+            raw: Ops::eq::<E>(&self.raw, &other.raw),
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Matrix multiplication generalized for two tensors.
@@ -334,11 +261,11 @@ where
         // Turn (..., k, n) into (..., 1, k, n)
         rhs_shape.insert(rhs_shape.len() - 2, NonZeroUsize::MIN);
         // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
-        let lhs = self.reshape(&lhs_shape)?;
-        let rhs = other.reshape(&rhs_shape)?;
-        let mul = &lhs * &rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2)?;
+        let lhs = self.reshape(&lhs_shape);
+        let rhs = other.reshape(&rhs_shape);
+        let mul = &lhs * &rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2);
         // Sum the last axis to get (..., m, n, 1)
-        let sum = mul.sum(&[mul.shape().len() - 1])?;
+        let sum = mul.sum(&[mul.shape().len() - 1]);
         // Remove last axis
         let mut shape = {
             let s = sum.shape();
@@ -352,62 +279,67 @@ where
         if orig_rhs_rank == 1 {
             shape.remove(shape.len() - 1);
         }
-        sum.reshape(&shape)
+        Some(sum.reshape(&shape))
     }
 
     /// Reduce along the given axes by summing all elements.
-    pub fn sum(&self, axes: &[usize]) -> Option<Self>
+    #[must_use]
+    pub fn sum(&self, axes: &[usize]) -> Self
     where
         E: Num,
     {
-        Some(Self {
-            raw: Ops::sum::<E>(&self.raw, axes)?,
+        Self {
+            raw: Ops::sum::<E>(&self.raw, axes),
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Reduce along the given axes by getting the maximum of all elements.
-    pub fn max(&self, axes: &[usize]) -> Option<Self>
+    #[must_use]
+    pub fn max(&self, axes: &[usize]) -> Self
     where
         E: Num,
     {
-        Some(Self {
-            raw: Ops::max::<E>(&self.raw, axes)?,
+        Self {
+            raw: Ops::max::<E>(&self.raw, axes),
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Reshape the tensor to the given shape, keeping the number of elements unchanged.
-    pub fn reshape(&self, shape: &[NonZeroUsize]) -> Option<Self>
+    #[must_use]
+    pub fn reshape(&self, shape: &[NonZeroUsize]) -> Self
     where
         E: Elem,
     {
-        Some(Self {
-            raw: Ops::reshape::<E>(&self.raw, shape)?,
+        Self {
+            raw: Ops::reshape::<E>(&self.raw, shape),
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Permute the tensor axes according to the given permutation.
-    pub fn permute(&self, permutation: &[usize]) -> Option<Self>
+    #[must_use]
+    pub fn permute(&self, permutation: &[usize]) -> Self
     where
         E: Elem,
     {
-        Some(Self {
-            raw: Ops::permute::<E>(&self.raw, permutation)?,
+        Self {
+            raw: Ops::permute::<E>(&self.raw, permutation),
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Expand singleton axes in a tensor to a larger size.
-    pub fn expand(&self, shape: &[NonZeroUsize]) -> Option<Self>
+    #[must_use]
+    pub fn expand(&self, shape: &[NonZeroUsize]) -> Self
     where
         E: Num,
     {
-        Some(Self {
-            raw: Ops::expand::<E>(&self.raw, shape)?,
+        Self {
+            raw: Ops::expand::<E>(&self.raw, shape),
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Create a tensor given its shape filled with a single value.
@@ -422,7 +354,8 @@ where
     }
 
     /// Swaps 2 dimensions of the tensor without cloning its data.
-    pub fn transpose(&self, axis0: usize, axis1: usize) -> Option<Self>
+    #[must_use]
+    pub fn transpose(&self, axis0: usize, axis1: usize) -> Self
     where
         E: Elem,
     {
@@ -439,17 +372,10 @@ where
     {
         let mut shape = self.shape().to_vec();
         shape.retain(|&sz| sz != NonZeroUsize::MIN);
-        let Some(reshaped) = self.reshape(&shape) else {
-            unreachable!("squeeze is infallible");
-        };
-        reshaped
+        self.reshape(&shape)
     }
 
-    fn broadcast<F, TOut, EOut, OpsOut>(
-        &self,
-        other: &Self,
-        op: F,
-    ) -> Option<Tensor<TOut, EOut, OpsOut>>
+    fn broadcast<F, TOut, EOut, OpsOut>(&self, other: &Self, op: F) -> Tensor<TOut, EOut, OpsOut>
     where
         E: Num,
         F: Fn(&T, &T) -> TOut,
@@ -474,16 +400,20 @@ where
             } else if lg_size == NonZeroUsize::MIN || lg_size == sm_size {
                 broadcasted_shape[lg_idx] = sm_size;
             } else {
-                return None;
+                panic!(
+                    "broadcast: incompatible shapes ({:?} and {:?})",
+                    self.shape(),
+                    other.shape()
+                );
             }
         }
         // Expand the tensors to the same shape and apply the operation to the expanded versions.
-        let lhs = Ops::expand::<E>(&self.raw, &broadcasted_shape)?;
-        let rhs = Ops::expand::<E>(&other.raw, &broadcasted_shape)?;
-        Some(Tensor {
+        let lhs = Ops::expand::<E>(&self.raw, &broadcasted_shape);
+        let rhs = Ops::expand::<E>(&other.raw, &broadcasted_shape);
+        Tensor {
             raw: op(&lhs, &rhs),
             _marker: PhantomData,
-        })
+        }
     }
 }
 
@@ -507,5 +437,5 @@ where
 /// The function panics when any of the given [`usize`] is zero.
 #[must_use]
 pub fn shape<const N: usize>(shape: [usize; N]) -> [NonZeroUsize; N] {
-    shape.map(|x| NonZeroUsize::new(x).unwrap())
+    shape.map(|x| NonZeroUsize::new(x).expect("non-zero value"))
 }
