@@ -3,8 +3,8 @@
 use std::{marker::PhantomData, num::NonZeroUsize};
 
 use crate::tensor::{
-    dtype::{Elem, Float, Num},
     ops::ML,
+    typ::{Elem, Float, Num},
 };
 
 /// Unary function returning a result and a [`UnaryDiff`] for computing its derivative.
@@ -178,7 +178,7 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn call(lhs: &T, rhs: &T) -> Option<(T, Self)> {
-        let out = Ops::sub::<E>(lhs, rhs)?;
+        let out = Ops::mul::<E>(lhs, rhs)?;
         Some((
             out,
             Self {

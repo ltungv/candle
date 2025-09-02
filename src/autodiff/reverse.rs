@@ -14,45 +14,74 @@ use crate::{
         Unary, UnaryDiff,
     },
     tensor::{
-        dtype::{Elem, Float, Num},
         ops::ML,
+        typ::{Elem, Float, Num},
         Tensor,
     },
 };
 
 type AdTensor<T, E, Ops> = Tensor<Reverse<T>, E, ReverseOps<Ops>>;
 
-/// Evaluate a function at the given primal, returning the its result and the gradient.
-pub fn grad<F, T, E, Ops>(
+/// Compute a reverse-mode vector-Jacobian product of `f`.
+///
+/// Return a tuple of the function's result and a [`PullBack`] object. [`PullBack::vjp`] can be
+/// used to compute the vector-Jacobian product of the function at any cotangent.
+pub fn vjp<F, T, E, Ops>(
     primal: &Tensor<T, E, Ops>,
     f: F,
-) -> (Tensor<T, E, Ops>, Tensor<T, E, Ops>)
+) -> (Tensor<T, E, Ops>, PullBack<T, E, Ops>)
 where
     F: FnOnce(AdTensor<T, E, Ops>) -> AdTensor<T, E, Ops>,
     T: 'static + Clone,
     E: Num,
     Ops: 'static + ML<Repr<E> = T>,
 {
-    let (out, mut grads) = gradn(&[primal], |mut ts| f(ts.swap_remove(0)));
-    (out, grads.swap_remove(0))
+    PullBack::on(&[primal], |mut ts| f(ts.swap_remove(0)))
 }
 
-/// Evaluate a function at the given primals, returning the its result and the gradient.
-#[allow(clippy::type_complexity)]
-pub fn gradn<F, T, E, Ops>(
+/// Compute a reverse-mode vector-Jacobian product of `f`.
+///
+/// Return a tuple of the function's result and a [`PullBack`] object. [`PullBack::vjp`] can be
+/// used to compute the vector-Jacobian product of the function at any cotangent.
+pub fn vjpn<F, T, E, Ops>(
     primals: &[&Tensor<T, E, Ops>],
     f: F,
-) -> (Tensor<T, E, Ops>, Vec<Tensor<T, E, Ops>>)
+) -> (Tensor<T, E, Ops>, PullBack<T, E, Ops>)
 where
     F: FnOnce(Vec<AdTensor<T, E, Ops>>) -> AdTensor<T, E, Ops>,
     T: 'static + Clone,
     E: Num,
     Ops: 'static + ML<Repr<E> = T>,
 {
-    let (out, pb) = PullBack::vjp(primals, f);
-    let cotangent = Tensor::fill(out.shape(), E::one());
-    let grad = pb.pull(&cotangent);
-    (out, grad)
+    PullBack::on(primals, f)
+}
+
+/// Evaluate a function at the given primal, returning the its result and the gradient.
+pub fn grad<F, T, E, Ops>(primal: &Tensor<T, E, Ops>, f: F) -> Tensor<T, E, Ops>
+where
+    F: FnOnce(AdTensor<T, E, Ops>) -> AdTensor<T, E, Ops>,
+    T: 'static + Clone,
+    E: Num,
+    Ops: 'static + ML<Repr<E> = T>,
+{
+    let (out, pb) = PullBack::on(&[primal], |mut ts| f(ts.swap_remove(0)));
+    let cotangent = Tensor::full(out.shape(), E::one());
+    let mut cotangents = pb.vjp(&cotangent);
+    cotangents.swap_remove(0)
+}
+
+/// Evaluate a function at the given primals, returning the its result and the gradient.
+#[allow(clippy::type_complexity)]
+pub fn gradn<F, T, E, Ops>(primals: &[&Tensor<T, E, Ops>], f: F) -> Vec<Tensor<T, E, Ops>>
+where
+    F: FnOnce(Vec<AdTensor<T, E, Ops>>) -> AdTensor<T, E, Ops>,
+    T: 'static + Clone,
+    E: Num,
+    Ops: 'static + ML<Repr<E> = T>,
+{
+    let (out, pb) = PullBack::on(primals, f);
+    let cotangent = Tensor::full(out.shape(), E::one());
+    pb.vjp(&cotangent)
 }
 
 /// The back-propagation function computing a [`Vec`] of cotangents given a cotangent.
@@ -69,12 +98,21 @@ impl<T, E, Ops> PullBack<T, E, Ops>
 where
     Ops: 'static + ML<Repr<E> = T>,
 {
-    /// Evaluate a function at the given primals, building a dependency graph of evaluated functions
-    /// for doing reverse-mode auto-differentiation.
-    ///
-    /// Return a tuple of the function's result and a [`PullBack`] object. [`PullBack::pull`] can be
-    /// used to compute the Vector-Jacobian product of the function at any cotangent.
-    pub fn vjp<F>(primals: &[&Tensor<T, E, Ops>], f: F) -> (Tensor<T, E, Ops>, Self)
+    /// Take a cotangent with the same shape as the result of the originating VJP function, and
+    /// return a [`Vec`] of cotangents of the same length and shapes as the VJP's primals,
+    pub fn vjp(&self, cotangent: &Tensor<T, E, Ops>) -> Vec<Tensor<T, E, Ops>>
+    where
+        T: 'static + Clone,
+        E: Num,
+    {
+        let ts = self.result_adjoint_index.map_or_else(
+            || self.zero_primals.clone(),
+            |idx| self.reverse(idx, cotangent.as_raw()),
+        );
+        ts.into_iter().map(|raw| Tensor::from_raw(raw)).collect()
+    }
+
+    fn on<F>(primals: &[&Tensor<T, E, Ops>], f: F) -> (Tensor<T, E, Ops>, Self)
     where
         T: Clone,
         E: Num,
@@ -83,7 +121,7 @@ where
         // Construct a cache of zero primals to be used where the VJP is not computed.
         let zero_primals: Vec<_> = primals
             .iter()
-            .map(|t| Ops::fill::<E>(t.shape(), E::zero()))
+            .map(|t| Ops::full::<E>(t.shape(), E::zero()))
             .collect();
 
         // Construct the variables from the given primals and add them to the tape.
@@ -118,20 +156,6 @@ where
                 _marker: PhantomData,
             },
         )
-    }
-
-    /// Take a cotangent with the same shape as the result of the originating VJP function, and
-    /// return a [`Vec`] of cotangents of the same length and shapes as the VJP's primals,
-    pub fn pull(&self, cotangent: &Tensor<T, E, Ops>) -> Vec<Tensor<T, E, Ops>>
-    where
-        T: 'static + Clone,
-        E: Num,
-    {
-        let ts = self.result_adjoint_index.map_or_else(
-            || self.zero_primals.clone(),
-            |idx| self.reverse(idx, cotangent.as_raw()),
-        );
-        ts.into_iter().map(|raw| Tensor::from_raw(raw)).collect()
     }
 
     // Back-propagate from the given adjoint index.
@@ -257,7 +281,7 @@ where
     where
         E: Float,
     {
-        t.unary(|t| Exp::<Ops::Repr<E>, E, Ops>::call(t, &()))
+        t.unary::<Exp<Ops::Repr<E>, E, Ops>>(&())
             .expect("exp is infallible")
     }
 
@@ -265,7 +289,7 @@ where
     where
         E: Float,
     {
-        t.unary(|t| Ln::<Ops::Repr<E>, E, Ops>::call(t, &()))
+        t.unary::<Ln<Ops::Repr<E>, E, Ops>>(&())
             .expect("ln is infallible")
     }
 
@@ -273,35 +297,35 @@ where
     where
         E: Num,
     {
-        lhs.binary(rhs, Add::<E, Ops>::call)
+        lhs.binary::<Add<E, Ops>>(rhs)
     }
 
     fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
         E: Num,
     {
-        lhs.binary(rhs, Sub::<E, Ops>::call)
+        lhs.binary::<Sub<E, Ops>>(rhs)
     }
 
     fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
         E: Num,
     {
-        lhs.binary(rhs, Mul::<Ops::Repr<E>, E, Ops>::call)
+        lhs.binary::<Mul<Ops::Repr<E>, E, Ops>>(rhs)
     }
 
     fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
         E: Num,
     {
-        lhs.binary(rhs, Div::<Ops::Repr<E>, E, Ops>::call)
+        lhs.binary::<Div<Ops::Repr<E>, E, Ops>>(rhs)
     }
 
     fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<E>>
     where
         E: Float,
     {
-        lhs.binary(rhs, Pow::<Ops::Repr<E>, E, Ops>::call)
+        lhs.binary::<Pow<Ops::Repr<E>, E, Ops>>(rhs)
     }
 
     fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Option<Self::Repr<bool>>
@@ -315,35 +339,35 @@ where
     where
         E: Num,
     {
-        t.unary(|t| Sum::<E, Ops>::call(t, axes))
+        t.unary::<Sum<E, Ops>>(axes)
     }
 
     fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Option<Self::Repr<E>>
     where
         E: Num,
     {
-        t.unary(|t| Max::<Ops::Repr<E>, E, Ops>::call(t, axes))
+        t.unary::<Max<Ops::Repr<E>, E, Ops>>(axes)
     }
 
     fn reshape<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
     where
         E: Elem,
     {
-        t.unary(|t| Reshape::<E, Ops>::call(t, shape))
+        t.unary::<Reshape<E, Ops>>(shape)
     }
 
     fn permute<E>(t: &Self::Repr<E>, permutation: &[usize]) -> Option<Self::Repr<E>>
     where
         E: Elem,
     {
-        t.unary(|t| Permute::<E, Ops>::call(t, permutation))
+        t.unary::<Permute<E, Ops>>(permutation)
     }
 
     fn expand<E>(t: &Self::Repr<E>, shape: &[NonZeroUsize]) -> Option<Self::Repr<E>>
     where
         E: Num,
     {
-        t.unary(|t| Expand::<E, Ops>::call(t, shape))
+        t.unary::<Expand<E, Ops>>(shape)
     }
 }
 
@@ -365,19 +389,18 @@ impl<T> Reverse<T> {
         }
     }
 
-    fn unary<F, Grad>(&self, op: F) -> Option<Self>
+    fn unary<Op>(&self, args: &Op::Args) -> Option<Self>
     where
-        F: FnOnce(&T) -> Option<(T, Grad)>,
-        Grad: 'static + UnaryDiff<T>,
+        Op: 'static + Unary<T>,
     {
         match self {
             Self::Lifted(primal) => {
-                let (primal, _) = op(primal)?;
+                let (primal, _) = Op::call(primal, args)?;
                 Some(Self::Lifted(primal))
             }
 
             Self::Traced(trace) => {
-                let (primal, grad) = op(&trace.primal)?;
+                let (primal, grad) = Op::call(&trace.primal, args)?;
                 Some(Self::Traced(Trace::new(
                     &trace.tape,
                     TapeNode::Unary(Box::new(grad), trace.index),
@@ -387,19 +410,18 @@ impl<T> Reverse<T> {
         }
     }
 
-    fn binary<F, Grad>(&self, other: &Self, op: F) -> Option<Self>
+    fn binary<Op>(&self, other: &Self) -> Option<Self>
     where
-        F: FnOnce(&T, &T) -> Option<(T, Grad)>,
-        Grad: 'static + BinaryDiff<T>,
+        Op: 'static + Binary<T>,
     {
         match (self, other) {
             (Self::Lifted(lhs), Self::Lifted(rhs)) => {
-                let (primal, _) = op(lhs, rhs)?;
+                let (primal, _) = Op::call(lhs, rhs)?;
                 Some(Self::Lifted(primal))
             }
 
             (Self::Lifted(lhs), Self::Traced(rhs)) => {
-                let (primal, grad) = op(lhs, &rhs.primal)?;
+                let (primal, grad) = Op::call(lhs, &rhs.primal)?;
                 Some(Self::Traced(Trace::new(
                     &rhs.tape,
                     TapeNode::BinaryDB(Box::new(grad), rhs.index),
@@ -408,7 +430,7 @@ impl<T> Reverse<T> {
             }
 
             (Self::Traced(lhs), Self::Lifted(rhs)) => {
-                let (primal, grad) = op(&lhs.primal, rhs)?;
+                let (primal, grad) = Op::call(&lhs.primal, rhs)?;
                 Some(Self::Traced(Trace::new(
                     &lhs.tape,
                     TapeNode::BinaryDA(Box::new(grad), lhs.index),
@@ -418,7 +440,7 @@ impl<T> Reverse<T> {
 
             (Self::Traced(lhs), Self::Traced(rhs)) => {
                 assert!(Rc::ptr_eq(&lhs.tape, &rhs.tape));
-                let (primal, grad) = op(&lhs.primal, &rhs.primal)?;
+                let (primal, grad) = Op::call(&lhs.primal, &rhs.primal)?;
                 Some(Self::Traced(Trace::new(
                     &lhs.tape,
                     TapeNode::Binary(Box::new(grad), lhs.index, rhs.index),
@@ -517,24 +539,5 @@ impl<T> fmt::Debug for TapeNode<T> {
                 .field(idx1)
                 .finish(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::num::NonZeroUsize;
-
-    use crate::{autodiff::reverse::grad, tensor::Cpu};
-
-    fn shape<const N: usize>(shape: [usize; N]) -> [NonZeroUsize; N] {
-        shape.map(|x| NonZeroUsize::new(x).unwrap())
-    }
-
-    #[test]
-    fn it_works() {
-        let t = Cpu::<f32>::new(&shape([2, 3]), &[1., 1., 1., 1., 1., 1.]).unwrap();
-        let (r, g) = grad(&t, |t| t.max(&[1]).unwrap());
-        dbg!(r.ravel());
-        dbg!(g.ravel());
     }
 }

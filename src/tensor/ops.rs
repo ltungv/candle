@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use crate::tensor::{
     cpu,
-    dtype::{Bool, Elem, Float, Num},
+    typ::{Bool, Elem, Float, Num},
 };
 
 /// Low-level tensor operations that must be suppported by the hardware.
@@ -181,13 +181,13 @@ pub trait ML {
         E: Num;
 
     /// Create a tensor given its shape filled with a single value.
-    fn fill<E>(shape: &[NonZeroUsize], value: E) -> Self::Repr<E>
+    fn full<E>(shape: &[NonZeroUsize], value: E) -> Self::Repr<E>
     where
         E: Num,
     {
         Self::new(&vec![NonZeroUsize::MIN; shape.len()], &[value])
             .and_then(|t| Self::expand::<E>(&t, shape))
-            .expect("fill is infallible")
+            .expect("full is infallible")
     }
 
     /// Apply negation to each element.
@@ -195,7 +195,7 @@ pub trait ML {
     where
         E: Num,
     {
-        let zeroes = Self::fill::<E>(Self::shape::<E>(t), E::zero());
+        let zeroes = Self::full::<E>(Self::shape::<E>(t), E::zero());
         Self::sub::<E>(&zeroes, t).expect("neg is infallible")
     }
 }

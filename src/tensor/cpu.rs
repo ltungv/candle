@@ -3,8 +3,8 @@
 use std::{cmp, iter, num::NonZeroUsize, ops, sync::Arc};
 
 use crate::tensor::{
-    dtype::{Bool, Elem, Float, Num},
     ops::{ToCpu, LL},
+    typ::{Bool, Elem, Float, Num},
 };
 
 /// Low-level tensor operations on the CPU.
