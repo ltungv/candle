@@ -196,8 +196,7 @@ pub trait ML {
     where
         E: Num,
     {
-        let zeroes = Self::full::<E>(Self::shape::<E>(t), E::zero());
-        Self::sub::<E>(&zeroes, t)
+        Self::sub::<E>(&Self::full::<E>(Self::shape::<E>(t), E::zero()), t)
     }
 }
 

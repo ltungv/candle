@@ -32,10 +32,10 @@ where
 
 /// Function to compute the gradient flow of a binary function.
 pub trait BinaryDiff<T> {
-    /// Flow the gradient through, updating it by the local gradient w.r.t. the LHS input.
+    /// Flow the gradient through, updating it by the local gradient w.r.t. the lhs input.
     fn dfda(&self, d: &T) -> T;
 
-    /// Flow the gradient through, updating it by the local gradient w.r.t. the RHS input.
+    /// Flow the gradient through, updating it by the local gradient w.r.t. the rhs input.
     fn dfdb(&self, d: &T) -> T;
 }
 

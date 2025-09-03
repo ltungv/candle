@@ -231,55 +231,72 @@ where
     ///   After matrix multiplication the prepended 1 is removed.
     /// + If the second argument is 1-D, it is promoted to a matrix by appending a 1 to its axes.
     ///   After matrix multiplication the appended 1 is removed.
+    ///
+    /// # Panics
+    ///
+    /// Panic when either of the arguments is a scalar, or if their inner axes don't match
     #[allow(clippy::similar_names)]
-    pub fn matmul(&self, other: &Self) -> Option<Self>
+    #[must_use]
+    pub fn matmul(&self, other: &Self) -> Self
     where
         E: Num,
     {
-        let mut lhs_shape = self.shape().to_vec();
-        let mut rhs_shape = other.shape().to_vec();
-        let orig_lhs_rank = lhs_shape.len();
-        let orig_rhs_rank = rhs_shape.len();
-        // Can't do matrix multiplication with scalars
-        if orig_lhs_rank == 0 || orig_rhs_rank == 0 {
-            return None;
+        let (lhs_sh, rhs_sh) = (self.shape(), other.shape());
+        let (lhs_nd, rhs_nd) = (lhs_sh.len(), rhs_sh.len());
+        assert!(lhs_nd > 0, "matmul: lhs has no axis");
+        assert!(rhs_nd > 0, "matmul: rhs has no axis");
+
+        let (lhs_n, rhs_n) = (lhs_nd - 1, rhs_nd.saturating_sub(2));
+        {
+            let lhs = lhs_sh[lhs_n];
+            let rhs = rhs_sh[rhs_n];
+            assert_eq!(lhs, rhs, "matmul: mismatched axes ({lhs} != {rhs})");
         }
-        // If the LHS shape is (k), make it (1, k)
-        if orig_lhs_rank == 1 {
-            lhs_shape.insert(0, NonZeroUsize::MIN);
-        }
-        // If the RHS shape is (k), make it (k, 1)
-        if orig_rhs_rank == 1 {
-            rhs_shape.push(NonZeroUsize::MIN);
-        }
-        // The last axis of the LHS must match the second-to-last axis of the RHS
-        if lhs_shape[lhs_shape.len() - 1] != rhs_shape[rhs_shape.len() - 2] {
-            return None;
-        }
-        // Turn (..., m, k) into (..., m, 1, k)
-        lhs_shape.insert(lhs_shape.len() - 1, NonZeroUsize::MIN);
-        // Turn (..., k, n) into (..., 1, k, n)
-        rhs_shape.insert(rhs_shape.len() - 2, NonZeroUsize::MIN);
-        // Multiply (..., m, 1, k) with (..., 1, n, k) to get (..., m, n, k)
-        let lhs = self.reshape(&lhs_shape);
-        let rhs = other.reshape(&rhs_shape);
-        let mul = &lhs * &rhs.transpose(rhs_shape.len() - 1, rhs_shape.len() - 2);
-        // Sum the last axis to get (..., m, n, 1)
-        let sum = mul.sum(&[mul.shape().len() - 1]);
-        // Remove last axis
-        let mut shape = {
-            let s = sum.shape();
-            s[..s.len() - 1].to_vec()
+
+        let prod = if rhs_nd == 1 {
+            // (.., M, N) .* (N) -> (..., M, N)
+            self * other
+        } else if lhs_nd == 1 {
+            // (N) -> (N, 1)
+            let lhs = self.reshape(&[lhs_sh, &[NonZeroUsize::MIN]].concat());
+            // (N, 1) .* (..., N, O) -> (..., N, O)
+            let prod = &lhs * other;
+            // (..., N, O) -> (..., O, N)
+            let prod_nd = prod.shape().len();
+            prod.transpose(prod_nd - 1, prod_nd - 2)
+        } else {
+            let lhs = self
+                // (..., M, N) -> (..., M, 1, N)
+                .reshape(&[&lhs_sh[..lhs_n], &[NonZeroUsize::MIN, lhs_sh[lhs_n]]].concat());
+
+            let rhs = other
+                // (..., N, O) -> (..., 1, N, O)
+                .reshape(&[&rhs_sh[..rhs_n], &[NonZeroUsize::MIN], &rhs_sh[rhs_n..]].concat())
+                // (..., 1, N, O) -> (..., 1, O, N)
+                .transpose(rhs_nd, rhs_nd - 1);
+
+            // (..., M, 1, N) .* (..., 1, O, N) -> (..., M, O, N)
+            &lhs * &rhs
         };
-        // Remove prepended axis if necessary
-        if orig_lhs_rank == 1 {
-            shape.remove(shape.len() - 2);
-        }
-        // Remove appended axis if necessary
-        if orig_rhs_rank == 1 {
-            shape.remove(shape.len() - 1);
-        }
-        Some(sum.reshape(&shape))
+
+        let prod_sh = prod.shape();
+        let sum_n = prod_sh.len() - 1;
+
+        // If either of the tensors is 1D:
+        // (..., M, N) -> (..., M, 1)
+        // (..., O, N) -> (..., O, 1)
+        //
+        // Otherwise:
+        // (..., M, O, N) -> (..., M, O, 1)
+        let sum = prod.sum(&[sum_n]);
+
+        // If either of the tensors is 1D:
+        // (..., M, 1) -> (..., M)
+        // (..., O, 1) -> (..., O)
+        //
+        // Otherwise:
+        // (..., M, O, 1) -> (..., M, O)
+        sum.reshape(&prod_sh[..sum_n])
     }
 
     /// Reduce along the given axes by summing all elements.
@@ -353,7 +370,7 @@ where
         }
     }
 
-    /// Swaps 2 dimensions of the tensor without cloning its data.
+    /// Swaps 2 axes of the tensor without cloning its data.
     #[must_use]
     pub fn transpose(&self, axis0: usize, axis1: usize) -> Self
     where
@@ -364,7 +381,7 @@ where
         self.permute(&permutation)
     }
 
-    /// Removes all singleton dimensions from the tensor.
+    /// Removes all singleton axes from the tensor.
     #[must_use]
     pub fn squeeze(&self) -> Self
     where
@@ -380,7 +397,7 @@ where
         E: Num,
         F: Fn(&T, &T) -> TOut,
     {
-        // Determine which shape has more dimensions.
+        // Determine which shape has more axes.
         let lhs_shape = self.shape();
         let rhs_shape = other.shape();
         let (small, large) = if lhs_shape.len() < rhs_shape.len() {
@@ -388,17 +405,17 @@ where
         } else {
             (rhs_shape, lhs_shape)
         };
-        // Zipping the 2 shapes in reverse order while filling in 1 for the missing dimensions.
+        // Zipping the 2 shapes in reverse order while filling in 1 for the missing axes.
         let mut broadcasted_shape = large.to_vec();
-        for dim in 0..small.len() {
-            let sm_idx = small.len() - dim - 1;
-            let lg_idx = large.len() - dim - 1;
-            let sm_size = small[sm_idx];
-            let lg_size = large[lg_idx];
+        for axis in 0..small.len() {
+            let sm_axis = small.len() - axis - 1;
+            let lg_axis = large.len() - axis - 1;
+            let sm_size = small[sm_axis];
+            let lg_size = large[lg_axis];
             if sm_size == NonZeroUsize::MIN {
-                broadcasted_shape[lg_idx] = lg_size;
+                broadcasted_shape[lg_axis] = lg_size;
             } else if lg_size == NonZeroUsize::MIN || lg_size == sm_size {
-                broadcasted_shape[lg_idx] = sm_size;
+                broadcasted_shape[lg_axis] = sm_size;
             } else {
                 panic!(
                     "broadcast: incompatible shapes ({:?} and {:?})",

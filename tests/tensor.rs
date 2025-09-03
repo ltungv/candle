@@ -611,39 +611,39 @@ fn matmul() {
         t2: &Tensor<T, f32, I>,
         t3: &Tensor<T, f32, I>,
     ) {
-        let r = t0.matmul(t0).unwrap();
+        let r = t0.matmul(t0);
         assert_eq!(r.shape(), &[]);
         assert_floats_eq(&r.ravel(), &[5.]);
 
-        let r = t0.matmul(t1).unwrap();
+        let r = t0.matmul(t1);
         assert_eq!(r.shape(), &shape([1]));
         assert_floats_eq(&r.ravel(), &[5.]);
 
-        let r = t0.matmul(t3).unwrap();
+        let r = t0.matmul(t3);
         assert_eq!(r.shape(), &shape([1, 3]));
         assert_floats_eq(&r.ravel(), &[15., 18., 21.]);
 
-        let r = t2.matmul(t0).unwrap();
+        let r = t2.matmul(t0);
         assert_eq!(r.shape(), &shape([1]));
         assert_floats_eq(&r.ravel(), &[5.]);
 
-        let r = t2.matmul(t1).unwrap();
+        let r = t2.matmul(t1);
         assert_eq!(r.shape(), &shape([1, 1]));
         assert_floats_eq(&r.ravel(), &[5.]);
 
-        let r = t2.matmul(t3).unwrap();
+        let r = t2.matmul(t3);
         assert_eq!(r.shape(), &shape([1, 1, 3]));
         assert_floats_eq(&r.ravel(), &[15., 18., 21.]);
 
-        let r = t3.matmul(t0).unwrap();
+        let r = t3.matmul(t0);
         assert_eq!(r.shape(), &shape([1, 3]));
         assert_floats_eq(&r.ravel(), &[5., 14., 23.]);
 
-        let r = t3.matmul(t1).unwrap();
+        let r = t3.matmul(t1);
         assert_eq!(r.shape(), &shape([1, 3, 1]));
         assert_floats_eq(&r.ravel(), &[5., 14., 23.]);
 
-        let r = t3.matmul(t3).unwrap();
+        let r = t3.matmul(t3);
         assert_eq!(r.shape(), &shape([1, 3, 3]));
         assert_floats_eq(&r.ravel(), &[15., 18., 21., 42., 54., 66., 69., 90., 111.]);
     }

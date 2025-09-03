@@ -22,7 +22,7 @@ impl LL for TensorOps {
         assert_eq!(
             layout.capacity().get(),
             data.len(),
-            "unexpected element count (want {}, but got {})",
+            "unexpected element count ({} != {})",
             layout.capacity(),
             data.len()
         );
@@ -229,7 +229,7 @@ impl<E> Tensor<E> {
     {
         assert_eq!(
             self.layout.shape, other.layout.shape,
-            "zip: incompatible shapes ({:?} and {:?})",
+            "zip: mismatched shapes ({:?} != {:?})",
             self.layout.shape, other.layout.shape
         );
         let buffer = self.iter().zip(other.iter()).map(|(x, y)| op(x, y));
@@ -317,7 +317,7 @@ impl<'a> IntoIterator for &'a Layout {
 impl Layout {
     /// Creates a contiguous row-major layout based on the given shape.
     fn contiguous(shape: Box<[NonZeroUsize]>) -> Self {
-        assert!(!shape.is_empty(), "shape must not be empty");
+        assert!(!shape.is_empty(), "non-scalar's shape can't be empty");
         // Go backwards through the shape to calculate the strides. The last strides is always 1.
         let mut strides = vec![1; shape.len()].into_boxed_slice();
         for idx in (0..shape.len() - 1).rev() {
@@ -365,9 +365,9 @@ impl Layout {
         let mut reducer_layout = reduced_layout.clone();
         for &d in axes {
             // The reducer layout is similar to the reduced layout, except that the strides of the
-            // reduced axes are set to 0. This prevents that dimension from contributing to the data
-            // position. Thus, we can map multiple elements along a dimension in the original tensor
-            // to the same memory position in the reduced tensor.
+            // reduced axes are set to 0. This prevents that axis from contributing to the data
+            // position. Thus, we can map multiple elements along an axis in the original tensor to
+            // the same memory position in the reduced tensor.
             reducer_layout.strides[d] = 0;
         }
         (reduced_layout, reducer_layout)
@@ -389,16 +389,12 @@ impl Layout {
         }
     }
 
-    /// Returns a new layout where the dimensions are permuted.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if one of the dimensions is invalid.
+    /// Returns a new layout where the axes are permuted.
     fn permute(&self, permutation: &[usize]) -> Self {
-        let rank = self.shape.len();
-        let mut shape = Vec::with_capacity(rank);
-        let mut strides = Vec::with_capacity(rank);
-        for &axis in &permutation[..rank] {
+        let nd = self.shape.len();
+        let mut shape = Vec::with_capacity(nd);
+        let mut strides = Vec::with_capacity(nd);
+        for &axis in &permutation[..nd] {
             shape.push(self.shape[axis]);
             strides.push(self.strides[axis]);
         }
@@ -408,28 +404,23 @@ impl Layout {
         }
     }
 
-    /// Returns a new layout for a tensor with singleton dimensions expanded to a larger size.
+    /// Returns a new layout for a tensor with singleton axes expanded to a larger size.
     ///
-    /// Tensor can also be expanded to a larger number of dimensions, and the new ones will be
-    /// appended at the front. For the new dimensions, the size cannot be set to -1.
+    /// Tensor can also be expanded to a larger number of axes, and the new ones will be appended at
+    /// the front. For the new axes, the size cannot be set to -1.
     ///
-    /// Expanding a tensor does not allocate new memory, but only creates a new view on the
-    /// existing tensor where a dimension of size one is expanded to a larger size by setting
-    /// the strides to 0. Any dimension of size 1 can be expanded to an arbitrary value without
-    /// allocating new memory.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the layout cannot be expanded to the new shape.
+    /// Expanding a tensor does not allocate new memory, but only creates a new view on the existing
+    /// tensor where an axis of size one is expanded to a larger size by setting the strides to 0.
+    /// Any axis of size 1 can be expanded to an arbitrary value without allocating new memory.
     fn expand(&self, new_shape: &[NonZeroUsize]) -> Self {
         let mut new_strides = vec![0; new_shape.len()];
-        for dim in 0..self.shape.len() {
-            let old_idx = self.shape.len() - dim - 1;
-            let new_idx = new_shape.len() - dim - 1;
-            if self.shape[old_idx] == new_shape[new_idx] {
-                new_strides[new_idx] = self.strides[old_idx];
-            } else if self.shape[old_idx] == NonZeroUsize::MIN {
-                new_strides[new_idx] = 0;
+        for axis in 0..self.shape.len() {
+            let old_axis = self.shape.len() - axis - 1;
+            let new_axis = new_shape.len() - axis - 1;
+            if self.shape[old_axis] == new_shape[new_axis] {
+                new_strides[new_axis] = self.strides[old_axis];
+            } else if self.shape[old_axis] == NonZeroUsize::MIN {
+                new_strides[new_axis] = 0;
             } else {
                 panic!(
                     "expand: incompatible shapes ({:?} and {:?})",
@@ -444,12 +435,7 @@ impl Layout {
     }
 
     /// Returns a new layout for a tensor having the same number of elements
-    /// but with a different shape. This function returns an error if the new
-    /// layout can't be accommodated without copying data.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the new shape is incompatible with the layout.
+    /// but with a different shape.
     fn reshape(&self, new_shape: &[NonZeroUsize]) -> Reshaped {
         let new_capacity = new_shape
             .iter()
@@ -467,47 +453,47 @@ impl Layout {
 
         let old_layout = self.squeeze();
         let mut new_strides = vec![1; new_shape.len()];
-        let mut old_dim = 0;
-        let mut new_dim = 0;
-        while old_dim < old_layout.shape.len() && new_dim < new_shape.len() {
-            // Find the combination of dimensions from the old and new shapes that have the same
-            // number of elements.
-            let old_dim_prev = old_dim;
-            let new_dim_prev = new_dim;
-            let mut old_size = old_layout.shape[old_dim];
-            let mut new_size = new_shape[new_dim];
+        let mut old_axis = 0;
+        let mut new_axis = 0;
+        while old_axis < old_layout.shape.len() && new_axis < new_shape.len() {
+            // Find the combination of axes from the old and new shapes having the same element count.
+            let old_axis_prev = old_axis;
+            let new_axis_prev = new_axis;
+            let mut old_size = old_layout.shape[old_axis];
+            let mut new_size = new_shape[new_axis];
             while old_size != new_size {
                 if old_size < new_size {
-                    old_dim += 1;
+                    old_axis += 1;
                     old_size = old_size
-                        .checked_mul(old_layout.shape[old_dim])
+                        .checked_mul(old_layout.shape[old_axis])
                         .expect("no overflow");
                 } else {
-                    new_dim += 1;
+                    new_axis += 1;
                     new_size = new_size
-                        .checked_mul(new_shape[new_dim])
+                        .checked_mul(new_shape[new_axis])
                         .expect("no overflow");
                 }
             }
-            // Check if the reshaped dimensions are non-contiguous in memory.
-            for dim in old_dim_prev..old_dim {
-                let expected_stride = old_layout.strides[dim + 1] * old_layout.shape[dim + 1].get();
-                if old_layout.strides[dim] != expected_stride {
+            // Check if the reshaped axes are non-contiguous in memory.
+            for axis in old_axis_prev..old_axis {
+                let expected_stride =
+                    old_layout.strides[axis + 1] * old_layout.shape[axis + 1].get();
+                if old_layout.strides[axis] != expected_stride {
                     return Reshaped::Copy;
                 }
             }
             // Build a strides backward.
-            new_strides[new_dim] = old_layout.strides[old_dim];
-            for dim in (new_dim_prev..new_dim).rev() {
-                new_strides[dim] = new_strides[dim + 1] * new_shape[dim + 1].get();
+            new_strides[new_axis] = old_layout.strides[old_axis];
+            for axis in (new_axis_prev..new_axis).rev() {
+                new_strides[axis] = new_strides[axis + 1] * new_shape[axis + 1].get();
             }
-            old_dim += 1;
-            new_dim += 1;
+            old_axis += 1;
+            new_axis += 1;
         }
-        if new_dim > 0 {
+        if new_axis > 0 {
             // Fill in the remaining strides.
-            let last_stride = new_strides[new_dim - 1];
-            for stride in new_strides.iter_mut().skip(new_dim) {
+            let last_stride = new_strides[new_axis - 1];
+            for stride in new_strides.iter_mut().skip(new_axis) {
                 *stride = last_stride;
             }
         }
