@@ -65,7 +65,7 @@ fn main() {
         E: Float,
         Ops: ML<Repr<E> = T>,
     {
-        let one = Tensor::<T, E, Ops>::scalar(E::one());
+        let one = Tensor::<T, E, Ops>::scalar(E::ONE);
         let prediction = predict(w, b, inputs);
         let label_probs = &prediction * targets + (&one - &prediction) * &(&one - targets);
         label_probs.ln().sum(&[0]).neg()

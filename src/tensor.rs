@@ -310,15 +310,15 @@ where
         E: Float + From<u16>,
     {
         let step = if num > 1 {
-            (stop - start) / From::from(num - 1)
+            (stop - start.clone()) / From::from(num - 1)
         } else {
-            E::zero()
+            E::ZERO
         };
         let mut data = Vec::with_capacity(num.into());
         let mut point = start;
         for _i in 0..num {
-            data.push(point);
-            point = point + step;
+            data.push(point.clone());
+            point = point.clone() + step.clone();
         }
         Self::new(&shape([num.into()]), &data)
     }

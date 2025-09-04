@@ -48,14 +48,14 @@ impl LL for TensorOps {
     where
         E: Float,
     {
-        t.map(|x| x.exp())
+        t.map(|x| x.clone().exp())
     }
 
     fn ln<E>(t: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Float,
     {
-        t.map(|x| x.ln())
+        t.map(|x| x.clone().ln())
     }
 
     fn add<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
@@ -90,7 +90,7 @@ impl LL for TensorOps {
     where
         E: Float,
     {
-        lhs.zip(rhs, |&x, &y| x.powf(y))
+        lhs.zip(rhs, |x, y| x.clone().pow(y.clone()))
     }
 
     fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<bool>

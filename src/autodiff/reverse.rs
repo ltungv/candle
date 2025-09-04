@@ -582,14 +582,14 @@ mod tests {
 
     type T32 = Tensor<cpu::Tensor<f32>, f32, cpu::TensorOps>;
 
-    fn float_eq<T: num::Float>(lhs: T, rhs: T, tolerance: T) -> bool {
-        (lhs.is_nan() && rhs.is_nan()) || (lhs - rhs).abs() <= tolerance
+    fn float_eq<T: Float>(lhs: T, rhs: T, tolerance: &T) -> bool {
+        (lhs.is_nan() && rhs.is_nan()) || (lhs - rhs).abs() <= *tolerance
     }
 
-    fn floats_eq<T: num::Float>(a: &[T], b: &[T], tolerance: T) -> bool {
+    fn floats_eq<T: Float>(a: &[T], b: &[T], tolerance: &T) -> bool {
         a.iter()
             .zip(b.iter())
-            .all(|(a, b)| float_eq(*a, *b, tolerance))
+            .all(|(a, b)| float_eq(a.clone(), b.clone(), tolerance))
     }
 
     #[test]
@@ -604,7 +604,7 @@ mod tests {
                 0.0, 0.0, 0.0, //
                 1.0, 1.0, 1.0
             ],
-            f32::EPSILON
+            &f32::EPSILON
         ));
 
         let df = grad(&x, |x| x.max(&[1]));
@@ -614,7 +614,7 @@ mod tests {
                 0.0, 0.0, 1.0, //
                 0.0, 0.0, 1.0
             ],
-            f32::EPSILON
+            &f32::EPSILON
         ));
 
         let df = grad(&y, |y| y.max(&[0]));
@@ -624,7 +624,7 @@ mod tests {
                 0.0, 0.5, 0.5, //
                 1.0, 0.5, 0.5
             ],
-            f32::EPSILON
+            &f32::EPSILON
         ));
 
         let df = grad(&y, |y| y.max(&[1]));
@@ -638,7 +638,7 @@ mod tests {
                 0.333_333_34,
                 0.333_333_34
             ],
-            f32::EPSILON
+            &f32::EPSILON
         ));
     }
 
@@ -653,9 +653,9 @@ mod tests {
         assert!(ddf.shape().is_empty());
         assert!(dddf.shape().is_empty());
 
-        assert!(float_eq(df.ravel()[0], 0.070_650_82, f32::EPSILON));
-        assert!(float_eq(ddf.ravel()[0], -0.136_218_68, f32::EPSILON));
-        assert!(float_eq(dddf.ravel()[0], 0.252_654_08, f32::EPSILON));
+        assert!(float_eq(df.ravel()[0], 0.070_650_82, &f32::EPSILON));
+        assert!(float_eq(ddf.ravel()[0], -0.136_218_68, &f32::EPSILON));
+        assert!(float_eq(dddf.ravel()[0], 0.252_654_08, &f32::EPSILON));
     }
 
     #[test]
@@ -683,7 +683,7 @@ mod tests {
             E: Float,
             Ops: ML<Repr<E> = T>,
         {
-            let one = Tensor::<T, E, Ops>::scalar(E::one());
+            let one = Tensor::<T, E, Ops>::scalar(E::ONE);
             let prediction = predict(w, b, inputs);
             let label_probs = &prediction * targets + (&one - &prediction) * &(&one - targets);
             label_probs.ln().sum(&[0]).neg()
@@ -743,6 +743,6 @@ mod tests {
             .ravel()
             .iter()
             .zip(b_grad_numerical.ravel().iter())
-            .all(|(ad, num)| float_eq(*ad, *num, 0.005)));
+            .all(|(ad, num)| float_eq(*ad, *num, &0.005)));
     }
 }

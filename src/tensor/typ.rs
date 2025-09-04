@@ -54,6 +54,46 @@ impl Num for f32 {}
 impl Num for i32 {}
 
 /// Floating values.
-pub trait Float: 'static + Num + num::Float {}
+pub trait Float: 'static + Num {
+    /// Return whether `self` is `NaN`.
+    #[must_use]
+    fn is_nan(&self) -> bool;
 
-impl Float for f32 {}
+    /// Return the absolute value of `self`.
+    #[must_use]
+    fn abs(self) -> Self;
+
+    /// Return the exponential of `self`, i.e., `e^self`.
+    #[must_use]
+    fn exp(self) -> Self;
+
+    /// Return the natural logarithm of `self`.
+    #[must_use]
+    fn ln(self) -> Self;
+
+    /// Return `self` raised by `by`.
+    #[must_use]
+    fn pow(self, by: Self) -> Self;
+}
+
+impl Float for f32 {
+    fn is_nan(&self) -> bool {
+        Self::is_nan(*self)
+    }
+
+    fn abs(self) -> Self {
+        Self::abs(self)
+    }
+
+    fn exp(self) -> Self {
+        Self::exp(self)
+    }
+
+    fn ln(self) -> Self {
+        Self::ln(self)
+    }
+
+    fn pow(self, by: Self) -> Self {
+        Self::powf(self, by)
+    }
+}
