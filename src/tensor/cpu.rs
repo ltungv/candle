@@ -1,6 +1,6 @@
 //! Low-level tensor operations and representation on the CPU.
 
-use std::{cmp, iter, num::NonZeroUsize, ops, sync::Arc};
+use std::{cmp, iter, num::NonZeroUsize, sync::Arc};
 
 use crate::tensor::{
     ops::{ToCpu, LL},
@@ -62,53 +62,49 @@ impl LL for TensorOps {
     where
         E: Num,
     {
-        lhs.zip(rhs, |x, y| ops::Add::add(x.clone(), y.clone()))
+        lhs.zip(rhs, |x, y| x.clone() + y.clone())
     }
 
     fn sub<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
-        lhs.zip(rhs, |x, y| ops::Sub::sub(x.clone(), y.clone()))
+        lhs.zip(rhs, |x, y| x.clone() - y.clone())
     }
 
     fn mul<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
-        lhs.zip(rhs, |x, y| ops::Mul::mul(x.clone(), y.clone()))
+        lhs.zip(rhs, |x, y| x.clone() * y.clone())
     }
 
     fn div<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Num,
     {
-        lhs.zip(rhs, |x, y| ops::Div::div(x.clone(), y.clone()))
+        lhs.zip(rhs, |x, y| x.clone() / y.clone())
     }
 
     fn pow<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<E>
     where
         E: Float,
     {
-        lhs.zip(rhs, |&x, &y| num::Float::powf(x, y))
+        lhs.zip(rhs, |&x, &y| x.powf(y))
     }
 
     fn eq<E>(lhs: &Self::Repr<E>, rhs: &Self::Repr<E>) -> Self::Repr<bool>
     where
         E: Elem + PartialEq,
     {
-        lhs.zip(rhs, |x, y| PartialEq::eq(x, y))
+        lhs.zip(rhs, |x, y| x == y)
     }
 
     fn sum<E>(t: &Self::Repr<E>, axes: &[usize]) -> Self::Repr<E>
     where
         E: Num,
     {
-        t.reduce(
-            axes,
-            || E::zero(),
-            |x, y| ops::Add::add(x.clone(), y.clone()),
-        )
+        t.reduce(axes, || E::ZERO, |x, y| x.clone() + y.clone())
     }
 
     fn max<E>(t: &Self::Repr<E>, axes: &[usize]) -> Self::Repr<E>
@@ -117,7 +113,7 @@ impl LL for TensorOps {
     {
         t.reduce(
             axes,
-            || E::min_value(),
+            || E::MIN,
             |x, y| {
                 if PartialOrd::partial_cmp(x, y).is_none_or(cmp::Ordering::is_gt) {
                     x.clone()
@@ -406,31 +402,26 @@ impl Layout {
 
     /// Returns a new layout for a tensor with singleton axes expanded to a larger size.
     ///
-    /// Tensor can also be expanded to a larger number of axes, and the new ones will be appended at
-    /// the front. For the new axes, the size cannot be set to -1.
-    ///
     /// Expanding a tensor does not allocate new memory, but only creates a new view on the existing
     /// tensor where an axis of size one is expanded to a larger size by setting the strides to 0.
     /// Any axis of size 1 can be expanded to an arbitrary value without allocating new memory.
     fn expand(&self, new_shape: &[NonZeroUsize]) -> Self {
         let mut shape = Vec::with_capacity(self.shape.len());
         let mut strides = Vec::with_capacity(self.strides.len());
-        for (old_axis, new_axis) in (0..self.shape.len()).rev().zip((0..new_shape.len()).rev()) {
-            if self.shape[old_axis] == new_shape[new_axis] {
-                shape.push(new_shape[new_axis]);
-                strides.push(self.strides[old_axis]);
-            } else if self.shape[old_axis] == NonZeroUsize::MIN {
-                shape.push(new_shape[new_axis]);
-                strides.push(0);
+        for (axis, &size) in new_shape.iter().enumerate() {
+            let stride = if self.shape[axis] == size {
+                self.strides[axis]
+            } else if self.shape[axis] == NonZeroUsize::MIN {
+                0
             } else {
                 panic!(
                     "expand: incompatible shapes ({:?} and {:?})",
                     self.shape, new_shape
                 );
-            }
+            };
+            shape.push(size);
+            strides.push(stride);
         }
-        shape.reverse();
-        strides.reverse();
         Self {
             shape: Box::from(shape),
             strides: Box::from(strides),

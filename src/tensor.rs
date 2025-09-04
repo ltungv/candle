@@ -4,12 +4,12 @@ pub mod cpu;
 pub mod ops;
 pub mod typ;
 
-use std::{marker::PhantomData, num::NonZeroUsize};
+use std::{fmt, iter, marker::PhantomData, num::NonZeroUsize};
 
 use ops::{ToCpu, ML};
 
 use crate::{
-    autodiff::reverse::{Reverse, ReverseOps},
+    autodiff::Lift,
     tensor::typ::{Elem, Float, Num},
 };
 
@@ -21,7 +21,6 @@ pub type Cpu<E> = Tensor<cpu::Tensor<E>, E, cpu::TensorOps>;
 /// All methods on this struct are delegated to those in [`ML`], enabling auto-differentiation and
 /// support for multiple hardwares. For convinience, operations are broadcasted by default, and
 /// traits from [`std`] are implemented to overloads common operations for a numeric/container type.
-#[derive(Debug)]
 pub struct Tensor<T, E, Ops> {
     raw: T,
     _marker: PhantomData<(E, Ops)>,
@@ -219,6 +218,16 @@ where
     }
 }
 
+impl<T, E, Ops> fmt::Debug for Tensor<T, E, Ops>
+where
+    E: Clone + fmt::Debug,
+    Ops: ToCpu<Repr<E> = T>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", Ops::to_cpu::<E>(&self.raw).ravel())
+    }
+}
+
 impl<T, E, Ops> Tensor<T, E, Ops> {
     /// Create a tensor given its raw representation.
     pub const fn from_raw(raw: T) -> Self {
@@ -267,6 +276,33 @@ where
         Self::new(&[], &[value])
     }
 
+    /// Create a tensor given its shape filled with a single value.
+    pub fn full(shape: &[NonZeroUsize], value: E) -> Self
+    where
+        E: Num,
+    {
+        Self {
+            raw: Ops::full(shape, value),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Create a tensor filled with zeroes of the given shape.
+    pub fn zeroes(shape: &[NonZeroUsize]) -> Self
+    where
+        E: Num,
+    {
+        Self::full(shape, E::ZERO)
+    }
+
+    /// Create a tensor filled with ones of the given shape.
+    pub fn ones(shape: &[NonZeroUsize]) -> Self
+    where
+        E: Num,
+    {
+        Self::full(shape, E::ONE)
+    }
+
     /// Create a tensor of `num` evenly spaced elements samed from the interval `[start, stop]`.
     #[allow(clippy::similar_names)]
     pub fn linspace(start: E, stop: E, num: u16) -> Self
@@ -290,6 +326,35 @@ where
     /// Return the shape of the tensor.
     pub fn shape(&self) -> &[NonZeroUsize] {
         Ops::shape::<E>(&self.raw)
+    }
+
+    /// Lift this tensor in a Reverse AD calculation. No derivatives are calculated for this tensor, it is
+    /// treated as a constant.
+    pub fn lift<L>(&self) -> Tensor<L, E, L::Ops<Ops>>
+    where
+        L: Lift<T>,
+        T: Clone,
+        Ops: 'static,
+    {
+        L::lift(self)
+    }
+
+    /// Create a tensor filled with zeroes of the given shape.
+    #[must_use]
+    pub fn zeroes_like(&self) -> Self
+    where
+        E: Num,
+    {
+        Self::zeroes(self.shape())
+    }
+
+    /// Create a tensor filled with zeroes of the given shape.
+    #[must_use]
+    pub fn ones_like(&self) -> Self
+    where
+        E: Num,
+    {
+        Self::ones(self.shape())
     }
 
     /// Negate all elements
@@ -334,7 +399,7 @@ where
     where
         E: Float,
     {
-        let ones = Self::full(self.shape(), E::one());
+        let ones = self.ones_like();
         let mut out = self.neg().exp();
         out = &ones + &out;
         out = &ones / &out;
@@ -347,8 +412,8 @@ where
     where
         E: Float,
     {
-        let ones = Self::full(self.shape(), E::one());
-        let twos = Self::full(self.shape(), E::one() + E::one());
+        let ones = self.ones_like();
+        let twos = &ones + &ones;
         let sigmoid = (&twos * self).sigmoid();
         twos * sigmoid - ones
     }
@@ -523,17 +588,6 @@ where
         }
     }
 
-    /// Create a tensor given its shape filled with a single value.
-    pub fn full(shape: &[NonZeroUsize], value: E) -> Self
-    where
-        E: Num,
-    {
-        Self {
-            raw: Ops::full(shape, value),
-            _marker: PhantomData,
-        }
-    }
-
     /// Swaps 2 axes of the tensor without cloning its data.
     #[must_use]
     pub fn transpose(&self, axis0: usize, axis1: usize) -> Self
@@ -556,19 +610,6 @@ where
         self.reshape(&shape)
     }
 
-    /// Lift this tensor in a Reverse AD calculation. No derivatives are calculated for this tensor, it is
-    /// treated as a constant.
-    pub fn lift_rev(&self) -> Tensor<<ReverseOps<Ops> as ML>::Repr<E>, E, ReverseOps<Ops>>
-    where
-        T: Clone,
-        Ops: 'static,
-    {
-        Tensor {
-            raw: Reverse::Lifted(self.raw.clone()),
-            _marker: PhantomData,
-        }
-    }
-
     fn broadcast<F, TOut, EOut, OpsOut>(&self, other: &Self, op: F) -> Tensor<TOut, EOut, OpsOut>
     where
         E: Num,
@@ -581,29 +622,32 @@ where
             (other, self, true)
         };
 
-        // Prepend ones to the shape until the dimensions match.
-        let lhs_shape: Vec<_> =
-            std::iter::repeat_n(NonZeroUsize::MIN, rhs.shape().len() - lhs.shape().len())
-                .chain(lhs.shape().iter().copied())
-                .collect();
+        let lhs_shape = lhs.shape();
+        let rhs_shape = rhs.shape();
+        let lhs_nd = lhs_shape.len();
+        let rhs_nd = rhs_shape.len();
 
-        // Zipping the 2 shapes to determine the broadcasted shape.
-        let mut rhs_shape = rhs.shape().to_vec();
-        for axis in 0..rhs_shape.len() {
-            let lhs_sz = lhs_shape[axis];
-            let rhs_sz = rhs_shape[axis];
+        let mut lhs_extended_shape = Vec::with_capacity(rhs_nd);
+        let mut broadcasted_shape = Vec::with_capacity(rhs_nd);
+
+        let rhs_shape_iter = rhs_shape.iter().copied();
+        let lhs_shape_iter =
+            iter::repeat_n(NonZeroUsize::MIN, rhs_nd - lhs_nd).chain(lhs_shape.iter().copied());
+
+        for (lhs_sz, rhs_sz) in lhs_shape_iter.zip(rhs_shape_iter) {
+            lhs_extended_shape.push(lhs_sz);
             if lhs_sz == NonZeroUsize::MIN {
-                rhs_shape[axis] = rhs_sz;
+                broadcasted_shape.push(rhs_sz);
             } else if rhs_sz == NonZeroUsize::MIN || rhs_sz == lhs_sz {
-                rhs_shape[axis] = lhs_sz;
+                broadcasted_shape.push(lhs_sz);
             } else {
                 panic!("broadcast: incompatible shapes ({lhs_shape:?} and {rhs_shape:?})",);
             }
         }
 
         // Expand the tensors to the same shape and apply the operation to the expanded versions.
-        let lhs = lhs.reshape(&lhs_shape).expand(&rhs_shape);
-        let rhs = rhs.expand(&rhs_shape);
+        let lhs = lhs.reshape(&lhs_extended_shape).expand(&broadcasted_shape);
+        let rhs = rhs.expand(&broadcasted_shape);
         Tensor {
             raw: if swapped {
                 op(&rhs.raw, &lhs.raw)

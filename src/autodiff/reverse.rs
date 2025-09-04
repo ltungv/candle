@@ -65,8 +65,7 @@ where
     Ops: 'static + ML<Repr<E> = T>,
 {
     let (out, pb) = PullBack::on(&[primal], |mut ts| f(ts.swap_remove(0)));
-    let cotangent = Tensor::full(out.shape(), E::one());
-    let mut cotangents = pb.vjp(&cotangent);
+    let mut cotangents = pb.vjp(&out.ones_like());
     cotangents.swap_remove(0)
 }
 
@@ -80,8 +79,40 @@ where
     Ops: 'static + ML<Repr<E> = T>,
 {
     let (out, pb) = PullBack::on(primals, f);
-    let cotangent = Tensor::full(out.shape(), E::one());
-    pb.vjp(&cotangent)
+    pb.vjp(&out.ones_like())
+}
+
+/// Evaluate a function at the given primal, returning its result and the gradient.
+pub fn value_and_grad<F, T, E, Ops>(
+    primal: &Tensor<T, E, Ops>,
+    f: F,
+) -> (Tensor<T, E, Ops>, Tensor<T, E, Ops>)
+where
+    F: FnOnce(AdTensor<T, E, Ops>) -> AdTensor<T, E, Ops>,
+    T: 'static + Clone,
+    E: Num,
+    Ops: 'static + ML<Repr<E> = T>,
+{
+    let (out, pb) = PullBack::on(&[primal], |mut ts| f(ts.swap_remove(0)));
+    let mut cotangents = pb.vjp(&out.ones_like());
+    (out, cotangents.swap_remove(0))
+}
+
+/// Evaluate a function at the given primals, returning its result and the gradient.
+#[allow(clippy::type_complexity)]
+pub fn value_and_gradn<F, T, E, Ops>(
+    primals: &[&Tensor<T, E, Ops>],
+    f: F,
+) -> (Tensor<T, E, Ops>, Vec<Tensor<T, E, Ops>>)
+where
+    F: FnOnce(Vec<AdTensor<T, E, Ops>>) -> AdTensor<T, E, Ops>,
+    T: 'static + Clone,
+    E: Num,
+    Ops: 'static + ML<Repr<E> = T>,
+{
+    let (out, pb) = PullBack::on(primals, f);
+    let cotangents = pb.vjp(&out.ones_like());
+    (out, cotangents)
 }
 
 /// The back-propagation function computing a [`Vec`] of cotangents given a cotangent.
@@ -119,10 +150,7 @@ where
         F: FnOnce(Vec<AdTensor<T, E, Ops>>) -> AdTensor<T, E, Ops>,
     {
         // Construct a cache of zero primals to be used where the VJP is not computed.
-        let zero_primals: Vec<_> = primals
-            .iter()
-            .map(|t| Ops::full::<E>(t.shape(), E::zero()))
-            .collect();
+        let zero_primals: Vec<_> = primals.iter().map(|t| t.zeroes_like().into_raw()).collect();
 
         // Construct the variables from the given primals and add them to the tape.
         let tape = Rc::new(Tape::new());
@@ -682,20 +710,16 @@ mod tests {
         let l = loss(&w, &b, &inputs, &targets);
 
         // Differentiate loss wrt weights.
-        let w_grad = grad(&w, |w| {
-            loss(&w, &b.lift_rev(), &inputs.lift_rev(), &targets.lift_rev())
-        });
+        let w_grad = grad(&w, |w| loss(&w, &b.lift(), &inputs.lift(), &targets.lift()));
 
         // Differentiate loss wrt biases.
-        let b_grad = grad(&b, |b| {
-            loss(&w.lift_rev(), &b, &inputs.lift_rev(), &targets.lift_rev())
-        });
+        let b_grad = grad(&b, |b| loss(&w.lift(), &b, &inputs.lift(), &targets.lift()));
 
         // Differentiate loss wrt weights and biases - should give the same answer.
         let wb_grads = gradn(&[&w, &b], |ts| {
             let w = &ts[0];
             let b = &ts[1];
-            loss(w, b, &inputs.lift_rev(), &targets.lift_rev())
+            loss(w, b, &inputs.lift(), &targets.lift())
         });
         assert!(w_grad.eq(&wb_grads[0]).ravel().iter().all(|x| *x));
         assert!(b_grad.eq(&wb_grads[1]).ravel().iter().all(|x| *x));

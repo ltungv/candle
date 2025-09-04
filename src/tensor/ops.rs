@@ -196,7 +196,7 @@ pub trait ML {
     where
         E: Num,
     {
-        Self::sub::<E>(&Self::full::<E>(Self::shape::<E>(t), E::zero()), t)
+        Self::sub::<E>(&Self::full::<E>(Self::shape::<E>(t), E::ZERO), t)
     }
 }
 

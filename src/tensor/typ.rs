@@ -1,6 +1,8 @@
 //! Traits for types that can be used as elements in a tensor.
 
-/// Tensor element values.
+use std::ops::{Add, Div, Mul, Sub};
+
+/// Tensor elements.
 pub trait Elem: 'static + Clone {}
 
 impl Elem for bool {}
@@ -9,30 +11,44 @@ impl Elem for i32 {}
 
 /// Boolean-like values
 pub trait Bool: 'static + Elem + PartialEq + PartialOrd + From<bool> {
-    /// Return the minimum value of the type.
-    fn min_value() -> Self;
+    /// The zero value of the type.
+    const ZERO: Self;
+
+    /// The one value of the type.
+    const ONE: Self;
+
+    /// The min value of the type.
+    const MIN: Self;
 }
 
 impl Bool for bool {
-    fn min_value() -> Self {
-        false
-    }
+    const ZERO: Self = false;
+    const ONE: Self = true;
+    const MIN: Self = false;
 }
 
 impl Bool for f32 {
-    fn min_value() -> Self {
-        Self::MIN
-    }
+    const ZERO: Self = 0.0;
+    const ONE: Self = 1.0;
+    const MIN: Self = Self::MIN;
 }
 
 impl Bool for i32 {
-    fn min_value() -> Self {
-        Self::MIN
-    }
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
+    const MIN: Self = Self::MIN;
 }
 
-/// Numeric values
-pub trait Num: 'static + Bool + num::Num {}
+/// Numeric values.
+pub trait Num:
+    'static
+    + Bool
+    + Add<Self, Output = Self>
+    + Sub<Self, Output = Self>
+    + Mul<Self, Output = Self>
+    + Div<Self, Output = Self>
+{
+}
 
 impl Num for f32 {}
 impl Num for i32 {}
