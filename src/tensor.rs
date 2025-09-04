@@ -267,6 +267,26 @@ where
         Self::new(&[], &[value])
     }
 
+    /// Create a tensor of `num` evenly spaced elements samed from the interval `[start, stop]`.
+    #[allow(clippy::similar_names)]
+    pub fn linspace(start: E, stop: E, num: u16) -> Self
+    where
+        E: Float + From<u16>,
+    {
+        let step = if num > 1 {
+            (stop - start) / From::from(num - 1)
+        } else {
+            E::zero()
+        };
+        let mut data = Vec::with_capacity(num.into());
+        let mut point = start;
+        for _i in 0..num {
+            data.push(point);
+            point = point + step;
+        }
+        Self::new(&shape([num.into()]), &data)
+    }
+
     /// Return the shape of the tensor.
     pub fn shape(&self) -> &[NonZeroUsize] {
         Ops::shape::<E>(&self.raw)

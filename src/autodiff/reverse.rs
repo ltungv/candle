@@ -555,11 +555,67 @@ mod tests {
     type T32 = Tensor<cpu::Tensor<f32>, f32, cpu::TensorOps>;
 
     fn float_eq<T: num::Float>(lhs: T, rhs: T, tolerance: T) -> bool {
-        (lhs - rhs).abs() <= tolerance
+        (lhs.is_nan() && rhs.is_nan()) || (lhs - rhs).abs() <= tolerance
+    }
+
+    fn floats_eq<T: num::Float>(a: &[T], b: &[T], tolerance: T) -> bool {
+        a.iter()
+            .zip(b.iter())
+            .all(|(a, b)| float_eq(*a, *b, tolerance))
     }
 
     #[test]
-    fn higher_order_grad() {
+    fn grad_max() {
+        let x = T32::linspace(0.0, 5.0, 6).reshape(&shape([2, 3]));
+        let y = T32::new(&shape([2, 3]), &[0.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+
+        let df = grad(&x, |x| x.max(&[0]));
+        assert!(floats_eq(
+            &df.ravel(),
+            &[
+                0.0, 0.0, 0.0, //
+                1.0, 1.0, 1.0
+            ],
+            f32::EPSILON
+        ));
+
+        let df = grad(&x, |x| x.max(&[1]));
+        assert!(floats_eq(
+            &df.ravel(),
+            &[
+                0.0, 0.0, 1.0, //
+                0.0, 0.0, 1.0
+            ],
+            f32::EPSILON
+        ));
+
+        let df = grad(&y, |y| y.max(&[0]));
+        assert!(floats_eq(
+            &df.ravel(),
+            &[
+                0.0, 0.5, 0.5, //
+                1.0, 0.5, 0.5
+            ],
+            f32::EPSILON
+        ));
+
+        let df = grad(&y, |y| y.max(&[1]));
+        assert!(floats_eq(
+            &df.ravel(),
+            &[
+                0.0,
+                0.5,
+                0.5, //
+                0.333_333_34,
+                0.333_333_34,
+                0.333_333_34
+            ],
+            f32::EPSILON
+        ));
+    }
+
+    #[test]
+    fn higher_order_grad_tanh() {
         let two = T32::scalar(2.0);
         let df = grad(&two, |t| t.tanh());
         let ddf = grad(&two, |t| grad(&t, |t| t.tanh()));
