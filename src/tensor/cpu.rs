@@ -413,14 +413,15 @@ impl Layout {
     /// tensor where an axis of size one is expanded to a larger size by setting the strides to 0.
     /// Any axis of size 1 can be expanded to an arbitrary value without allocating new memory.
     fn expand(&self, new_shape: &[NonZeroUsize]) -> Self {
-        let mut new_strides = vec![0; new_shape.len()];
-        for axis in 0..self.shape.len() {
-            let old_axis = self.shape.len() - axis - 1;
-            let new_axis = new_shape.len() - axis - 1;
+        let mut shape = Vec::with_capacity(self.shape.len());
+        let mut strides = Vec::with_capacity(self.strides.len());
+        for (old_axis, new_axis) in (0..self.shape.len()).rev().zip((0..new_shape.len()).rev()) {
             if self.shape[old_axis] == new_shape[new_axis] {
-                new_strides[new_axis] = self.strides[old_axis];
+                shape.push(new_shape[new_axis]);
+                strides.push(self.strides[old_axis]);
             } else if self.shape[old_axis] == NonZeroUsize::MIN {
-                new_strides[new_axis] = 0;
+                shape.push(new_shape[new_axis]);
+                strides.push(0);
             } else {
                 panic!(
                     "expand: incompatible shapes ({:?} and {:?})",
@@ -428,9 +429,11 @@ impl Layout {
                 );
             }
         }
+        shape.reverse();
+        strides.reverse();
         Self {
-            shape: Box::from(new_shape),
-            strides: Box::from(new_strides),
+            shape: Box::from(shape),
+            strides: Box::from(strides),
         }
     }
 

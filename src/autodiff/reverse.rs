@@ -56,7 +56,7 @@ where
     PullBack::on(primals, f)
 }
 
-/// Evaluate a function at the given primal, returning the its result and the gradient.
+/// Evaluate a function at the given primal, returning its result and the gradient.
 pub fn grad<F, T, E, Ops>(primal: &Tensor<T, E, Ops>, f: F) -> Tensor<T, E, Ops>
 where
     F: FnOnce(AdTensor<T, E, Ops>) -> AdTensor<T, E, Ops>,
@@ -70,7 +70,7 @@ where
     cotangents.swap_remove(0)
 }
 
-/// Evaluate a function at the given primals, returning the its result and the gradient.
+/// Evaluate a function at the given primals, returning its result and the gradient.
 #[allow(clippy::type_complexity)]
 pub fn gradn<F, T, E, Ops>(primals: &[&Tensor<T, E, Ops>], f: F) -> Vec<Tensor<T, E, Ops>>
 where
@@ -537,5 +537,132 @@ impl<T> fmt::Debug for TapeNode<T> {
                 .field(idx1)
                 .finish(),
         }
+    }
+}
+
+#[allow(clippy::similar_names)]
+#[cfg(test)]
+mod tests {
+    use std::f32;
+
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
+    use crate::{
+        autodiff::reverse::{grad, gradn},
+        tensor::{cpu, ops::ML, shape, typ::Float, Tensor},
+    };
+
+    type T32 = Tensor<cpu::Tensor<f32>, f32, cpu::TensorOps>;
+
+    fn float_eq<T: num::Float>(lhs: T, rhs: T, tolerance: T) -> bool {
+        (lhs - rhs).abs() <= tolerance
+    }
+
+    #[test]
+    fn higher_order_grad() {
+        let two = T32::scalar(2.0);
+        let df = grad(&two, |t| t.tanh());
+        let ddf = grad(&two, |t| grad(&t, |t| t.tanh()));
+        let dddf = grad(&two, |t| grad(&t, |t| grad(&t, |t| t.tanh())));
+
+        assert!(df.shape().is_empty());
+        assert!(ddf.shape().is_empty());
+        assert!(dddf.shape().is_empty());
+
+        assert!(float_eq(df.ravel()[0], 0.070_650_82, f32::EPSILON));
+        assert!(float_eq(ddf.ravel()[0], -0.136_218_68, f32::EPSILON));
+        assert!(float_eq(dddf.ravel()[0], 0.252_654_08, f32::EPSILON));
+    }
+
+    #[test]
+    fn jax_autodiff_cookbook() {
+        fn predict<T, E, Ops>(
+            w: &Tensor<T, E, Ops>,
+            b: &Tensor<T, E, Ops>,
+            inputs: &Tensor<T, E, Ops>,
+        ) -> Tensor<T, E, Ops>
+        where
+            E: Float,
+            Ops: ML<Repr<E> = T>,
+        {
+            (&inputs.matmul(w) + b).sigmoid()
+        }
+
+        // Training loss is the negative log-likelihood of the training examples.
+        fn loss<T, E, Ops>(
+            w: &Tensor<T, E, Ops>,
+            b: &Tensor<T, E, Ops>,
+            inputs: &Tensor<T, E, Ops>,
+            targets: &Tensor<T, E, Ops>,
+        ) -> Tensor<T, E, Ops>
+        where
+            E: Float,
+            Ops: ML<Repr<E> = T>,
+        {
+            let one = Tensor::<T, E, Ops>::scalar(E::one());
+            let prediction = predict(w, b, inputs);
+            let label_probs = &prediction * targets + (&one - &prediction) * &(&one - targets);
+            label_probs.ln().sum(&[0]).neg()
+        }
+
+        // Build a toy dataset.
+        let targets = T32::new(&shape([4]), &[1.0, 1.0, 0.0, 1.0]);
+        let inputs = T32::new(
+            &shape([4, 3]),
+            &[
+                0.52, 1.12, 0.77, //
+                0.88, -1.08, 0.15, //
+                0.52, 0.06, -1.30, //
+                0.74, -2.49, 1.39,
+            ],
+        );
+
+        let mut rng = StdRng::seed_from_u64(0);
+        let ws: Vec<f32> = (&mut rng).random_iter().take(3).collect();
+        let bs: Vec<f32> = (&mut rng).random_iter().take(1).collect();
+
+        let w = T32::new(&shape([3]), &ws);
+        let b = T32::new(&shape([1]), &bs);
+        let l = loss(&w, &b, &inputs, &targets);
+
+        // Differentiate loss wrt weights.
+        let w_grad = grad(&w, |w| {
+            loss(&w, &b.lift_rev(), &inputs.lift_rev(), &targets.lift_rev())
+        });
+
+        // Differentiate loss wrt biases.
+        let b_grad = grad(&b, |b| {
+            loss(&w.lift_rev(), &b, &inputs.lift_rev(), &targets.lift_rev())
+        });
+
+        // Differentiate loss wrt weights and biases - should give the same answer.
+        let wb_grads = gradn(&[&w, &b], |ts| {
+            let w = &ts[0];
+            let b = &ts[1];
+            loss(w, b, &inputs.lift_rev(), &targets.lift_rev())
+        });
+        assert!(w_grad.eq(&wb_grads[0]).ravel().iter().all(|x| *x));
+        assert!(b_grad.eq(&wb_grads[1]).ravel().iter().all(|x| *x));
+
+        let new_w = &w - &w_grad;
+        let new_b = &b - &b_grad;
+        let new_l = loss(&new_w, &new_b, &inputs, &targets);
+        assert!(new_l
+            .ravel()
+            .iter()
+            .zip(l.ravel().iter())
+            .all(|(new, old)| new < old));
+
+        let eps = T32::scalar(1e-4);
+        let half_eps = &eps / T32::scalar(2.0);
+        let loss_l = loss(&w, &(&b - &half_eps), &inputs, &targets);
+        let loss_r = loss(&w, &(&b + &half_eps), &inputs, &targets);
+        let b_grad_numerical = (loss_r - loss_l) / &eps;
+
+        assert!(b_grad
+            .ravel()
+            .iter()
+            .zip(b_grad_numerical.ravel().iter())
+            .all(|(ad, num)| float_eq(*ad, *num, 0.005)));
     }
 }

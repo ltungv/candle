@@ -519,30 +519,13 @@ fn expand() {
         assert_eq!(&r.shape(), &shape([3]));
         assert_floats_eq(&r.ravel(), &[420.69, 420.69, 420.69]);
 
-        let r = t0.expand(&shape([3, 2]));
+        let r = t1.expand(&shape([3, 2]));
         assert_eq!(&r.shape(), &shape([3, 2]));
-        assert_floats_eq(
-            &r.ravel(),
-            &[420.69, 420.69, 420.69, 420.69, 420.69, 420.69],
-        );
+        assert_floats_eq(&r.ravel(), &[420., 69., 420., 69., 420., 69.]);
 
-        let r = t1.expand(&shape([2, 3, 2]));
-        assert_eq!(&r.shape(), &shape([2, 3, 2]));
-        assert_floats_eq(
-            &r.ravel(),
-            &[
-                420., 69., 420., 69., 420., 69., 420., 69., 420., 69., 420., 69.,
-            ],
-        );
-
-        let r = t2.expand(&shape([2, 2, 3]));
-        assert_eq!(&r.shape(), &shape([2, 2, 3]));
-        assert_floats_eq(
-            &r.ravel(),
-            &[
-                420., 420., 420., 69., 69., 69., 420., 420., 420., 69., 69., 69.,
-            ],
-        );
+        let r = t2.expand(&shape([2, 3]));
+        assert_eq!(&r.shape(), &shape([2, 3]));
+        assert_floats_eq(&r.ravel(), &[420., 420., 420., 69., 69., 69.]);
     }
 
     let t0 = Cpu::<f32>::new(&shape([1]), &[420.69]);

@@ -8,7 +8,10 @@ use std::{marker::PhantomData, num::NonZeroUsize};
 
 use ops::{ToCpu, ML};
 
-use crate::tensor::typ::{Elem, Float, Num};
+use crate::{
+    autodiff::reverse::{Reverse, ReverseOps},
+    tensor::typ::{Elem, Float, Num},
+};
 
 /// An alias for a tensor on the CPU having elements of type `E`.
 pub type Cpu<E> = Tensor<cpu::Tensor<E>, E, cpu::TensorOps>;
@@ -24,6 +27,30 @@ pub struct Tensor<T, E, Ops> {
     _marker: PhantomData<(E, Ops)>,
 }
 
+impl<T, E, Ops> std::ops::Add<Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self::Output {
+        self.broadcast(&other, Ops::add::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Add<&Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn add(self, other: &Self) -> Self::Output {
+        self.broadcast(other, Ops::add::<E>)
+    }
+}
+
 impl<T, E, Ops> std::ops::Add<Self> for &Tensor<T, E, Ops>
 where
     E: Num,
@@ -33,6 +60,42 @@ where
 
     fn add(self, other: Self) -> Self::Output {
         self.broadcast(other, Ops::add::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Add<Tensor<T, E, Ops>> for &Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Tensor<T, E, Ops>;
+
+    fn add(self, other: Tensor<T, E, Ops>) -> Self::Output {
+        self.broadcast(&other, Ops::add::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Sub<Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self::Output {
+        self.broadcast(&other, Ops::sub::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Sub<&Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn sub(self, other: &Self) -> Self::Output {
+        self.broadcast(other, Ops::sub::<E>)
     }
 }
 
@@ -48,6 +111,42 @@ where
     }
 }
 
+impl<T, E, Ops> std::ops::Sub<Tensor<T, E, Ops>> for &Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Tensor<T, E, Ops>;
+
+    fn sub(self, other: Tensor<T, E, Ops>) -> Self::Output {
+        self.broadcast(&other, Ops::sub::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Mul<Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self::Output {
+        self.broadcast(&other, Ops::mul::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Mul<&Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn mul(self, other: &Self) -> Self::Output {
+        self.broadcast(other, Ops::mul::<E>)
+    }
+}
+
 impl<T, E, Ops> std::ops::Mul<Self> for &Tensor<T, E, Ops>
 where
     E: Num,
@@ -60,6 +159,42 @@ where
     }
 }
 
+impl<T, E, Ops> std::ops::Mul<Tensor<T, E, Ops>> for &Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Tensor<T, E, Ops>;
+
+    fn mul(self, other: Tensor<T, E, Ops>) -> Self::Output {
+        self.broadcast(&other, Ops::mul::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Div<Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn div(self, other: Self) -> Self::Output {
+        self.broadcast(&other, Ops::div::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Div<&Self> for Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Self;
+
+    fn div(self, other: &Self) -> Self::Output {
+        self.broadcast(other, Ops::div::<E>)
+    }
+}
+
 impl<T, E, Ops> std::ops::Div<Self> for &Tensor<T, E, Ops>
 where
     E: Num,
@@ -69,6 +204,18 @@ where
 
     fn div(self, other: Self) -> Self::Output {
         self.broadcast(other, Ops::div::<E>)
+    }
+}
+
+impl<T, E, Ops> std::ops::Div<Tensor<T, E, Ops>> for &Tensor<T, E, Ops>
+where
+    E: Num,
+    Ops: ML<Repr<E> = T>,
+{
+    type Output = Tensor<T, E, Ops>;
+
+    fn div(self, other: Tensor<T, E, Ops>) -> Self::Output {
+        self.broadcast(&other, Ops::div::<E>)
     }
 }
 
@@ -182,11 +329,8 @@ where
     {
         let ones = Self::full(self.shape(), E::one());
         let twos = Self::full(self.shape(), E::one() + E::one());
-        let mut out = &twos * self;
-        out = out.sigmoid();
-        out = &twos * &out;
-        out = &out - &ones;
-        out
+        let sigmoid = (&twos * self).sigmoid();
+        twos * sigmoid - ones
     }
 
     /// Raise `self` to the power of `other`.
@@ -260,7 +404,7 @@ where
             // (N) -> (N, 1)
             let lhs = self.reshape(&[lhs_sh, &[NonZeroUsize::MIN]].concat());
             // (N, 1) .* (..., N, O) -> (..., N, O)
-            let prod = &lhs * other;
+            let prod = lhs * other;
             // (..., N, O) -> (..., O, N)
             let prod_nd = prod.shape().len();
             prod.transpose(prod_nd - 1, prod_nd - 2)
@@ -276,7 +420,7 @@ where
                 .transpose(rhs_nd, rhs_nd - 1);
 
             // (..., M, 1, N) .* (..., 1, O, N) -> (..., M, O, N)
-            &lhs * &rhs
+            lhs * rhs
         };
 
         let prod_sh = prod.shape();
@@ -392,43 +536,60 @@ where
         self.reshape(&shape)
     }
 
+    /// Lift this tensor in a Reverse AD calculation. No derivatives are calculated for this tensor, it is
+    /// treated as a constant.
+    pub fn lift_rev(&self) -> Tensor<<ReverseOps<Ops> as ML>::Repr<E>, E, ReverseOps<Ops>>
+    where
+        T: Clone,
+        Ops: 'static,
+    {
+        Tensor {
+            raw: Reverse::Lifted(self.raw.clone()),
+            _marker: PhantomData,
+        }
+    }
+
     fn broadcast<F, TOut, EOut, OpsOut>(&self, other: &Self, op: F) -> Tensor<TOut, EOut, OpsOut>
     where
         E: Num,
         F: Fn(&T, &T) -> TOut,
     {
-        // Determine which shape has more axes.
-        let lhs_shape = self.shape();
-        let rhs_shape = other.shape();
-        let (small, large) = if lhs_shape.len() < rhs_shape.len() {
-            (lhs_shape, rhs_shape)
+        // Determine which shape has less axes, making it the lhs argument
+        let (lhs, rhs, swapped) = if self.shape().len() < other.shape().len() {
+            (self, other, false)
         } else {
-            (rhs_shape, lhs_shape)
+            (other, self, true)
         };
-        // Zipping the 2 shapes in reverse order while filling in 1 for the missing axes.
-        let mut broadcasted_shape = large.to_vec();
-        for axis in 0..small.len() {
-            let sm_axis = small.len() - axis - 1;
-            let lg_axis = large.len() - axis - 1;
-            let sm_size = small[sm_axis];
-            let lg_size = large[lg_axis];
-            if sm_size == NonZeroUsize::MIN {
-                broadcasted_shape[lg_axis] = lg_size;
-            } else if lg_size == NonZeroUsize::MIN || lg_size == sm_size {
-                broadcasted_shape[lg_axis] = sm_size;
+
+        // Prepend ones to the shape until the dimensions match.
+        let lhs_shape: Vec<_> =
+            std::iter::repeat_n(NonZeroUsize::MIN, rhs.shape().len() - lhs.shape().len())
+                .chain(lhs.shape().iter().copied())
+                .collect();
+
+        // Zipping the 2 shapes to determine the broadcasted shape.
+        let mut rhs_shape = rhs.shape().to_vec();
+        for axis in 0..rhs_shape.len() {
+            let lhs_sz = lhs_shape[axis];
+            let rhs_sz = rhs_shape[axis];
+            if lhs_sz == NonZeroUsize::MIN {
+                rhs_shape[axis] = rhs_sz;
+            } else if rhs_sz == NonZeroUsize::MIN || rhs_sz == lhs_sz {
+                rhs_shape[axis] = lhs_sz;
             } else {
-                panic!(
-                    "broadcast: incompatible shapes ({:?} and {:?})",
-                    self.shape(),
-                    other.shape()
-                );
+                panic!("broadcast: incompatible shapes ({lhs_shape:?} and {rhs_shape:?})",);
             }
         }
+
         // Expand the tensors to the same shape and apply the operation to the expanded versions.
-        let lhs = Ops::expand::<E>(&self.raw, &broadcasted_shape);
-        let rhs = Ops::expand::<E>(&other.raw, &broadcasted_shape);
+        let lhs = lhs.reshape(&lhs_shape).expand(&rhs_shape);
+        let rhs = rhs.expand(&rhs_shape);
         Tensor {
-            raw: op(&lhs, &rhs),
+            raw: if swapped {
+                op(&rhs.raw, &lhs.raw)
+            } else {
+                op(&lhs.raw, &rhs.raw)
+            },
             _marker: PhantomData,
         }
     }

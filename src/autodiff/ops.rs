@@ -27,7 +27,7 @@ pub trait Binary<T>: BinaryDiff<T>
 where
     Self: Sized,
 {
-    fn call(lhs: &T, rhs: &T) -> (T, Self);
+    fn call(a: &T, b: &T) -> (T, Self);
 }
 
 /// Function to compute the gradient flow of a binary function.
@@ -116,8 +116,8 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> (T, Self) {
-        (Ops::add::<E>(lhs, rhs), Self(PhantomData))
+    fn call(a: &T, b: &T) -> (T, Self) {
+        (Ops::add::<E>(a, b), Self(PhantomData))
     }
 }
 
@@ -142,8 +142,8 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> (T, Self) {
-        (Ops::sub::<E>(lhs, rhs), Self(PhantomData))
+    fn call(a: &T, b: &T) -> (T, Self) {
+        (Ops::sub::<E>(a, b), Self(PhantomData))
     }
 }
 
@@ -163,8 +163,8 @@ where
 }
 
 pub struct Mul<T, E, Ops> {
-    lhs: T,
-    rhs: T,
+    a: T,
+    b: T,
     _marker: PhantomData<(E, Ops)>,
 }
 
@@ -174,12 +174,12 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> (T, Self) {
+    fn call(a: &T, b: &T) -> (T, Self) {
         (
-            Ops::mul::<E>(lhs, rhs),
+            Ops::mul::<E>(a, b),
             Self {
-                lhs: lhs.clone(),
-                rhs: rhs.clone(),
+                a: a.clone(),
+                b: b.clone(),
                 _marker: PhantomData,
             },
         )
@@ -192,17 +192,17 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn dfda(&self, d: &T) -> T {
-        Ops::mul::<E>(d, &self.rhs)
+        Ops::mul::<E>(d, &self.b)
     }
 
     fn dfdb(&self, d: &T) -> T {
-        Ops::mul::<E>(d, &self.lhs)
+        Ops::mul::<E>(d, &self.a)
     }
 }
 
 pub struct Div<T, E, Ops> {
-    lhs: T,
-    rhs: T,
+    a: T,
+    b: T,
     _marker: PhantomData<(E, Ops)>,
 }
 
@@ -212,12 +212,12 @@ where
     E: Num,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> (T, Self) {
+    fn call(a: &T, b: &T) -> (T, Self) {
         (
-            Ops::div::<E>(lhs, rhs),
+            Ops::div::<E>(a, b),
             Self {
-                lhs: lhs.clone(),
-                rhs: rhs.clone(),
+                a: a.clone(),
+                b: b.clone(),
                 _marker: PhantomData,
             },
         )
@@ -230,23 +230,20 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn dfda(&self, d: &T) -> T {
-        Ops::div::<E>(d, &self.rhs)
+        Ops::div::<E>(d, &self.b)
     }
 
     fn dfdb(&self, d: &T) -> T {
-        Ops::mul::<E>(
-            d,
-            &Ops::neg::<E>(&Ops::div::<E>(
-                &self.lhs,
-                &Ops::mul::<E>(&self.rhs, &self.rhs),
-            )),
-        )
+        Ops::neg::<E>(&Ops::div::<E>(
+            &Ops::mul::<E>(d, &self.a),
+            &Ops::mul::<E>(&self.b, &self.b),
+        ))
     }
 }
 
 pub struct Pow<T, E, Ops> {
-    lhs: T,
-    rhs: T,
+    a: T,
+    b: T,
     out: T,
     _marker: PhantomData<(E, Ops)>,
 }
@@ -257,13 +254,13 @@ where
     E: Float,
     Ops: ML<Repr<E> = T>,
 {
-    fn call(lhs: &T, rhs: &T) -> (T, Self) {
-        let out = Ops::pow::<E>(lhs, rhs);
+    fn call(a: &T, b: &T) -> (T, Self) {
+        let out = Ops::pow::<E>(a, b);
         (
             out.clone(),
             Self {
-                lhs: lhs.clone(),
-                rhs: rhs.clone(),
+                a: a.clone(),
+                b: b.clone(),
                 out,
                 _marker: PhantomData,
             },
@@ -279,12 +276,12 @@ where
     fn dfda(&self, d: &T) -> T {
         Ops::mul::<E>(
             d,
-            &Ops::mul::<E>(&self.rhs, &Ops::div::<E>(&self.out, &self.lhs)),
+            &Ops::mul::<E>(&self.b, &Ops::div::<E>(&self.out, &self.a)),
         )
     }
 
     fn dfdb(&self, d: &T) -> T {
-        Ops::mul::<E>(d, &Ops::mul::<E>(&self.out, &Ops::ln::<E>(&self.lhs)))
+        Ops::mul::<E>(d, &Ops::mul::<E>(&self.out, &Ops::ln::<E>(&self.a)))
     }
 }
 
@@ -396,7 +393,7 @@ where
         (
             Ops::reshape::<E>(arg, shape),
             Self {
-                shape: shape.into(),
+                shape: Ops::shape::<E>(arg).into(),
                 _marker: PhantomData,
             },
         )
@@ -442,12 +439,12 @@ where
     Ops: ML<Repr<E> = T>,
 {
     fn df(&self, d: &T) -> T {
-        let permutation_rev: Vec<_> = {
+        let inversed: Vec<_> = {
             let mut permutation: Vec<_> = self.permutation.iter().enumerate().collect();
             permutation.sort_by_key(|&(_, axis)| *axis);
             permutation.into_iter().map(|(idx, _)| idx).collect()
         };
-        Ops::permute::<E>(d, &permutation_rev)
+        Ops::permute::<E>(d, &inversed)
     }
 }
 
@@ -467,7 +464,7 @@ where
         (
             Ops::expand::<E>(arg, shape),
             Self {
-                shape: shape.into(),
+                shape: Ops::shape::<E>(arg).into(),
                 _marker: PhantomData,
             },
         )
